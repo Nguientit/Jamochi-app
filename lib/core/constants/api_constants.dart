@@ -5,12 +5,12 @@ class ApiConstants {
   // ── Môi trường ──────────────────────────────────────────────────────────────
   static const bool isProduction = false;
 
-  static const String _devBase  = "http://192.168.0.104:5000/api"; // ← IP của bạn
-  static const String _prodBase = "https://your-api.com/api";
+  static const String _devBase  = "https://jamochi-be.onrender.com/api";
+  static const String _prodBase = "https://jamochi-be.onrender.com/api";
   static String get baseUrl => isProduction ? _prodBase : _devBase;
 
-  static const String _devSocket  = "http://192.168.0.104:5000";
-  static const String _prodSocket = "wss://your-api.com";
+  static const String _devSocket  = "https://jamochi-be.onrender.com";
+  static const String _prodSocket = "wss://jamochi-be.onrender.com";
   static String get socketUrl => isProduction ? _prodSocket : _devSocket;
 
   // ── Auth ──────────────────────────────────────────────────────────────────
