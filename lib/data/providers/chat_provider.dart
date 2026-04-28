@@ -1,151 +1,374 @@
-import 'package:dio/dio.dart';
+// data/providers/chat_provider.dart
+// 📁 JAMOCHI_APP/lib/data/providers/chat_provider.dart
+
+import 'package:image_picker/image_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../core/constants/api_constants.dart';
-import '../network/dio_client.dart';
+import 'package:google_generative_ai/google_generative_ai.dart';
+import 'package:image_picker/image_picker.dart';
+
+import '../../models/message.dart';
 import '../network/socket_client.dart';
 import '../repositories/message_repository.dart';
-import '../../models/message.dart';
 import 'auth_provider.dart';
 
-// ── MessageRepository Provider ──
-final messageRepositoryProvider = Provider<MessageRepository>((ref) {
-  return MessageRepository();
-});
+// ── Config Gemini ─────────────────────────────────────────────────────────────
+// Thêm GEMINI_API_KEY vào .env của Flutter (hoặc hardcode khi test)
+const _geminiApiKey = String.fromEnvironment(
+  'GEMINI_API_KEY',
+  defaultValue: 'AIzaSyBWWAO-gGSaG2FcG9NNusZb2FUjnj1O46c',
+);
 
-// ── State ──
+// ── State ─────────────────────────────────────────────────────────────────────
 class ChatState {
   final List<ChatMessage> messages;
-  final bool isLoading;
-  final bool hasUnreadMessages; // 🎯 Track unread messages
+  final bool              isLoading;
+  final bool              isSending;
+  final bool              hasUnread;
+  final bool              isPartnerTyping;
+  final PartnerStatus     partnerStatus;
+  final ChatMessage?      replyingTo;
+  final String?           errorMessage;
 
-  ChatState({
-    this.messages = const [], 
-    this.isLoading = false,
-    this.hasUnreadMessages = false,
+  const ChatState({
+    this.messages        = const [],
+    this.isLoading       = false,
+    this.isSending       = false,
+    this.hasUnread       = false,
+    this.isPartnerTyping = false,
+    this.partnerStatus   = const PartnerStatus(isOnline: false),
+    this.replyingTo,
+    this.errorMessage,
   });
-  
+
   ChatState copyWith({
-    List<ChatMessage>? messages, 
-    bool? isLoading,
-    bool? hasUnreadMessages,
+    List<ChatMessage>? messages,
+    bool?              isLoading,
+    bool?              isSending,
+    bool?              hasUnread,
+    bool?              isPartnerTyping,
+    PartnerStatus?     partnerStatus,
+    ChatMessage?       replyingTo,
+    bool               clearReply = false,
+    String?            errorMessage,
   }) {
     return ChatState(
-      messages: messages ?? this.messages,
-      isLoading: isLoading ?? this.isLoading,
-      hasUnreadMessages: hasUnreadMessages ?? this.hasUnreadMessages,
+      messages:        messages        ?? this.messages,
+      isLoading:       isLoading       ?? this.isLoading,
+      isSending:       isSending       ?? this.isSending,
+      hasUnread:       hasUnread       ?? this.hasUnread,
+      isPartnerTyping: isPartnerTyping ?? this.isPartnerTyping,
+      partnerStatus:   partnerStatus   ?? this.partnerStatus,
+      replyingTo:      clearReply ? null : (replyingTo ?? this.replyingTo),
+      errorMessage:    errorMessage,
     );
   }
 }
 
-// ── Notifier ──
-// ── Notifier ──
+// ── Notifier ──────────────────────────────────────────────────────────────────
 class ChatNotifier extends StateNotifier<ChatState> {
   final MessageRepository _repo;
-  final SocketClient _socket;
-  final String myUserId; // 🎯 Thêm biến này để lưu ID của mình
+  final SocketClient      _socket;
+  final String            myUserId;
+  final String            partnerId;
 
-  // 🎯 Thêm myUserId vào constructor
-  ChatNotifier(this._repo, this._socket, this.myUserId) : super(ChatState()) {
+  // Gemini model — khởi tạo lazy để không crash nếu key chưa có
+  GenerativeModel? _gemini;
+
+  ChatNotifier(this._repo, this._socket, this.myUserId, this.partnerId)
+      : super(const ChatState()) {
+    _initGemini();
     _listenToSockets();
     loadHistory();
   }
 
-  void _listenToSockets() {
-    _socket.onReceiveMessage((data) {
-      try {
-        if (data == null || data is! Map<String, dynamic>) return;
-
-        final newMessage = ChatMessage.fromJson(data);
-
-        // 🛡️ FIX NHÂN ĐÔI: Bỏ qua tin nhắn do chính mình gửi qua Socket
-        if (newMessage.senderId == myUserId) return;
-
-        if (!state.messages.any((m) => m.id == newMessage.id)) {
-          state = state.copyWith(
-            messages: [newMessage, ...state.messages],
-            hasUnreadMessages: true, // 🎯 Set badge khi có message từ partner
-          );
-          print('[Chat] ✅ Received message: ${newMessage.id}');
-        }
-      } catch (e) {
-        print('[Chat] ❌ Lỗi parse message: $e');
-      }
-    });
-  }
-  
-  // 🎯 Hàm để xóa unread badge khi mở chat screen
-  void clearUnreadBadge() {
-    state = state.copyWith(hasUnreadMessages: false);
-  }
-
-  Future<void> loadHistory() async {
-    state = state.copyWith(isLoading: true);
+  void _initGemini() {
     try {
-      final messageData = await _repo.getMessages();
-      final loadedMsgs = <ChatMessage>[];
-      for (final item in messageData) {
-        try {
-          loadedMsgs.add(ChatMessage.fromJson(item));
-        } catch (_) {}
-      }
-      final reversed = loadedMsgs.reversed.toList();
-      state = state.copyWith(
-        messages: reversed,
-        isLoading: false,
-        // Giữ lại hasUnreadMessages nếu đã được set
+      if (_geminiApiKey == 'YOUR_GEMINI_API_KEY_HERE') return;
+      _gemini = GenerativeModel(
+        model: 'gemini-1.5-flash',
+        apiKey: _geminiApiKey,
+        systemInstruction: Content.system(
+          'Bạn là một chatbot an ủi dễ thương tên "Mochi AI", '
+          'dành cho một cô gái đang chờ bạn trai online. '
+          'Hãy nói chuyện bằng tiếng Việt, thân mật, dùng từ "bạn" và "mình", '
+          'hài hước nhẹ nhàng, dùng emoji vừa phải. '
+          'Không được nhắc tới việc bạn là AI. '
+          'Mục tiêu: làm cô ấy vui lên và không còn buồn vì chờ đợi.',
+        ),
       );
     } catch (e) {
-      state = state.copyWith(isLoading: false);
+      print('[Gemini] Init failed: $e');
     }
   }
 
-  // 🎯 Gửi tin nhắn
+  // ── Socket listeners ────────────────────────────────────────────────────────
+  void _listenToSockets() {
+    // Nhận tin nhắn từ partner
+    _socket.onReceiveMessage((data) {
+      try {
+        final msg = ChatMessage.fromJson(data);
+        if (msg.senderId == myUserId) return; // tránh nhân đôi
+        if (state.messages.any((m) => m.id == msg.id)) return;
+
+        state = state.copyWith(
+          messages:  [msg, ...state.messages],
+          hasUnread: true,
+        );
+      } catch (e) {
+        print('[Chat] receive-message parse error: $e');
+      }
+    });
+
+    // Typing indicator
+    _socket.onPartnerTyping(()         => state = state.copyWith(isPartnerTyping: true));
+    _socket.onPartnerStoppedTyping(()  => state = state.copyWith(isPartnerTyping: false));
+
+    // Reaction realtime
+    _socket.onMessageReacted((data) {
+      final msgId   = data['message_id']?.toString() ?? '';
+      final emoji   = data['emoji']?.toString();
+      _updateReactionLocally(msgId, emoji);
+    });
+
+    // Online / offline status
+    _socket.onPartnerOnline((userId) {
+      if (userId == partnerId) {
+        state = state.copyWith(
+          partnerStatus: const PartnerStatus(isOnline: true),
+          isPartnerTyping: false,
+        );
+      }
+    });
+
+    _socket.onPartnerOffline((userId, lastSeen) {
+      if (userId == partnerId) {
+        state = state.copyWith(
+          partnerStatus:   PartnerStatus(isOnline: false, lastSeen: lastSeen),
+          isPartnerTyping: false,
+        );
+        // 🤖 Tự động gọi Gemini an ủi khi partner offline
+        _triggerGeminiComfort();
+      }
+    });
+  }
+
+  // ── Load lịch sử ────────────────────────────────────────────────────────────
+  Future<void> loadHistory() async {
+    state = state.copyWith(isLoading: true);
+    try {
+      final data = await _repo.getMessages();
+      final msgs = data.map((d) {
+        try { return ChatMessage.fromJson(d); }
+        catch (_) { return null; }
+      }).whereType<ChatMessage>().toList();
+
+      // API trả về mới nhất cuối — đảo ngược để newest ở index 0 (reverse ListView)
+      state = state.copyWith(messages: msgs.reversed.toList(), isLoading: false);
+    } catch (e) {
+      state = state.copyWith(isLoading: false, errorMessage: e.toString());
+    }
+  }
+
+  // ── Gửi text ────────────────────────────────────────────────────────────────
   Future<void> sendMessage(String text) async {
     if (text.trim().isEmpty) return;
 
-    final trimmedText = text.trim();
-    final tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
+    final trimmed  = text.trim();
+    final tempId   = 'temp_${DateTime.now().millisecondsSinceEpoch}';
+    final replyTo  = state.replyingTo;
+
+    final tempMsg = ChatMessage(
+      id:           tempId,
+      senderId:     myUserId,
+      content:      trimmed,
+      type:         'text',
+      replyToId:    replyTo?.id,
+      replyContent: replyTo?.content,
+      createdAt:    DateTime.now(),
+    );
+
+    state = state.copyWith(
+      messages:  [tempMsg, ...state.messages],
+      isSending: true,
+      clearReply: true,
+    );
 
     try {
-      // 1. Tạo tin nhắn tạm với ĐÚNG senderId của người gửi
-      final tempMessage = ChatMessage(
-        id: tempId,
-        senderId: myUserId, // <-- Gắn ID của bạn vào đây
-        content: trimmedText,
-        type: 'text',
-        createdAt: DateTime.now(),
-      );
-
-      // 2. Hiện ngay lên màn hình bên PHẢI
-      state = state.copyWith(messages: [tempMessage, ...state.messages]);
-
-      // 3. Gửi lên API Backend
-      final res = await _repo.sendMessage(trimmedText);
-
-      // 4. Lấy ID thật từ Server ghi đè lên ID tạm (để Socket dội về không bị nhân đôi)
+      final res = await _repo.sendMessage(trimmed, replyToId: replyTo?.id);
       if (res['data'] != null) {
-        final realMessage = ChatMessage.fromJson(res['data']);
+        final realMsg = ChatMessage.fromJson(res['data']);
         state = state.copyWith(
-          messages: state.messages
-              .map((m) => m.id == tempId ? realMessage : m)
-              .toList(),
+          messages:  state.messages.map((m) => m.id == tempId ? realMsg : m).toList(),
+          isSending: false,
         );
       }
     } catch (e) {
-      // Nếu lỗi, xóa tin nhắn tạm đi
+      // Xóa tin tạm nếu lỗi
       state = state.copyWith(
-        messages: state.messages.where((m) => m.id != tempId).toList(),
+        messages:     state.messages.where((m) => m.id != tempId).toList(),
+        isSending:    false,
+        errorMessage: e.toString(),
       );
       rethrow;
     }
   }
+
+  // ── Gửi ảnh ─────────────────────────────────────────────────────────────────
+  Future<void> sendImage(XFile imageFile) async {
+    final tempId = 'temp_img_${DateTime.now().millisecondsSinceEpoch}';
+
+    // Hiện preview ngay (dùng path local)
+    final tempMsg = ChatMessage(
+      id:        tempId,
+      senderId:  myUserId,
+      type:      'image',
+      mediaUrl:  imageFile.path,
+      createdAt: DateTime.now(),
+    );
+
+    state = state.copyWith(
+      messages:  [tempMsg, ...state.messages],
+      isSending: true,
+    );
+
+    try {
+      final res = await _repo.sendImage(imageFile);
+      if (res['data'] != null) {
+        final realMsg = ChatMessage.fromJson(res['data']);
+        state = state.copyWith(
+          messages:  state.messages.map((m) => m.id == tempId ? realMsg : m).toList(),
+          isSending: false,
+        );
+      }
+    } catch (e) {
+      state = state.copyWith(
+        messages:     state.messages.where((m) => m.id != tempId).toList(),
+        isSending:    false,
+        errorMessage: e.toString(),
+      );
+      rethrow;
+    }
+  }
+
+  // ── React tin nhắn ───────────────────────────────────────────────────────────
+  Future<void> reactToMessage(String messageId, String? emoji) async {
+    // Cập nhật UI ngay (optimistic)
+    _updateReactionLocally(messageId, emoji);
+
+    try {
+      await _repo.reactMessage(messageId, emoji);
+    } catch (e) {
+      // Rollback nếu API lỗi
+      _updateReactionLocally(messageId, null);
+      state = state.copyWith(errorMessage: 'React thất bại: $e');
+    }
+  }
+
+  void _updateReactionLocally(String messageId, String? emoji) {
+    state = state.copyWith(
+      messages: state.messages.map((m) {
+        if (m.id == messageId) return m.copyWithReaction(emoji);
+        return m;
+      }).toList(),
+    );
+  }
+
+  // ── Reply ────────────────────────────────────────────────────────────────────
+  void setReplyTo(ChatMessage? msg) => state = state.copyWith(replyingTo: msg);
+  void cancelReply()               => state = state.copyWith(clearReply: true);
+
+  // ── Gemini: tự động an ủi khi partner offline ─────────────────────────────
+  Future<void> _triggerGeminiComfort() async {
+    if (_gemini == null) return;
+
+    // Chỉ trigger nếu cô ấy là người đang dùng (không phải bạn trai)
+    // Logic: nếu myUserId không phải sender của đa số tin → cô ấy đang chờ
+    await Future.delayed(const Duration(seconds: 3)); // Chờ 3 giây trước khi hiện
+
+    try {
+      final response = await _gemini!.generateContent([
+        Content.text(
+          'Bạn trai của tôi vừa offline. Hãy an ủi tôi một câu ngắn gọn, dễ thương, '
+          'và gợi ý tôi làm gì trong lúc chờ. Đừng quá 2 câu.',
+        ),
+      ]);
+
+      final text = response.text?.trim();
+      if (text == null || text.isEmpty) return;
+
+      // Thêm tin nhắn từ "Mochi AI" vào chat
+      final aiMsg = ChatMessage(
+        id:        'gemini_${DateTime.now().millisecondsSinceEpoch}',
+        senderId:  'mochi_ai',  // senderId đặc biệt để nhận dạng
+        content:   text,
+        type:      'text',
+        createdAt: DateTime.now(),
+      );
+
+      state = state.copyWith(messages: [aiMsg, ...state.messages]);
+    } catch (e) {
+      print('[Gemini] Comfort error: $e');
+    }
+  }
+
+  // ── Hỏi Gemini thủ công ──────────────────────────────────────────────────
+  Future<void> askGemini(String question) async {
+    if (_gemini == null) {
+      state = state.copyWith(errorMessage: 'Mochi AI chưa được cấu hình 🤖');
+      return;
+    }
+
+    // Thêm câu hỏi của user
+    final userMsg = ChatMessage(
+      id:        'user_${DateTime.now().millisecondsSinceEpoch}',
+      senderId:  myUserId,
+      content:   question,
+      type:      'text',
+      createdAt: DateTime.now(),
+    );
+    state = state.copyWith(messages: [userMsg, ...state.messages], isSending: true);
+
+    try {
+      final response = await _gemini!.generateContent([Content.text(question)]);
+      final text     = response.text?.trim() ?? 'Mình không biết trả lời câu này 😅';
+
+      final aiMsg = ChatMessage(
+        id:        'gemini_${DateTime.now().millisecondsSinceEpoch}',
+        senderId:  'mochi_ai',
+        content:   text,
+        type:      'text',
+        createdAt: DateTime.now(),
+      );
+      state = state.copyWith(messages: [aiMsg, ...state.messages], isSending: false);
+    } catch (e) {
+      state = state.copyWith(isSending: false, errorMessage: 'Mochi AI lỗi: $e');
+    }
+  }
+
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+  void clearUnread()  => state = state.copyWith(hasUnread: false);
+  void clearError()   => state = state.copyWith(errorMessage: null);
+
+  void emitTyping(String coupleId) =>
+      _socket.emitTyping({'couple_id': coupleId, 'recipient_id': partnerId});
+
+  void emitStopTyping(String coupleId) =>
+      _socket.emitStopTyping({'couple_id': coupleId, 'recipient_id': partnerId});
 }
 
-// ── Provider ──
-final chatProvider = StateNotifierProvider<ChatNotifier, ChatState>((ref) {
-  final repo = ref.read(messageRepositoryProvider);
-  final socket = ref.read(socketClientProvider);
+// ── Providers ─────────────────────────────────────────────────────────────────
+final messageRepositoryProvider = Provider<MessageRepository>((_) => MessageRepository());
 
-  final user = ref.read(authProvider).user;
-  return ChatNotifier(repo, socket, user?.id ?? '');
+final socketClientProvider = Provider<SocketClient>((_) => SocketClient());
+
+final chatProvider = StateNotifierProvider<ChatNotifier, ChatState>((ref) {
+  final repo      = ref.read(messageRepositoryProvider);
+  final socket    = ref.read(socketClientProvider);
+  final authState = ref.read(authProvider);
+  return ChatNotifier(
+    repo,
+    socket,
+    authState.user?.id         ?? '',
+    authState.couple?.partnerId(authState.user?.id ?? '') ?? '',
+  );
 });

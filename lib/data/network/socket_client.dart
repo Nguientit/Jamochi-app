@@ -1,10 +1,13 @@
+// data/network/socket_client.dart
+// 📁 JAMOCHI_APP/lib/data/network/socket_client.dart
+
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import '../../core/constants/api_constants.dart';
 
 class SocketClient {
   static final SocketClient _instance = SocketClient._internal();
   factory SocketClient() => _instance;
-  
+
   late IO.Socket _socket;
   bool get isConnected => _socket.connected;
 
@@ -19,6 +22,10 @@ class SocketClient {
           .setReconnectionDelay(2000)
           .build(),
     );
+
+    _socket.onConnect((_)    => print('[Socket] ✅ Connected: ${_socket.id}'));
+    _socket.onDisconnect((_) => print('[Socket] ❌ Disconnected'));
+    _socket.onConnectError((e) => print('[Socket] ⚠️ Error: $e'));
   }
 
   void connect(String token) {
@@ -27,22 +34,18 @@ class SocketClient {
     _socket.connect();
   }
 
-  void disconnect() {
-    _socket.disconnect();
-  }
+  void disconnect() => _socket.disconnect();
 
-  void onPartnerMoodChanged(void Function(Map<String, dynamic> data) callback) {
+  // ── Mood ──────────────────────────────────────────────────────────────────
+  void onPartnerMoodChanged(void Function(Map<String, dynamic>) callback) {
     _socket.off('partner-mood-changed');
     _socket.on('partner-mood-changed', (raw) {
-      try {
-        final data = Map<String, dynamic>.from(raw as Map);
-        callback(data);
-      } catch (e) {
-        print('[Socket] Lỗi parse mood event: $e');
-      }
+      try { callback(Map<String, dynamic>.from(raw as Map)); }
+      catch (e) { print('[Socket] mood parse error: $e'); }
     });
   }
 
+  // ── Chat ──────────────────────────────────────────────────────────────────
   void onReceiveMessage(void Function(Map<String, dynamic>) callback) {
     _socket.off('receive-message');
     _socket.on('receive-message', (raw) => callback(Map<String, dynamic>.from(raw as Map)));
@@ -58,11 +61,42 @@ class SocketClient {
     _socket.on('partner-stopped-typing', (_) => callback());
   }
 
+  // ── Reaction ──────────────────────────────────────────────────────────────
+  // Server broadcast event 'message-reacted' khi ai đó react
+  void onMessageReacted(void Function(Map<String, dynamic>) callback) {
+    _socket.off('message-reacted');
+    _socket.on('message-reacted', (raw) => callback(Map<String, dynamic>.from(raw as Map)));
+  }
+
+  // ── Online / Offline status ───────────────────────────────────────────────
+  // Server emit 'user-online' và 'user-offline' khi partner connect/disconnect
+  void onPartnerOnline(void Function(String userId) callback) {
+    _socket.off('user-online');
+    _socket.on('user-online', (raw) {
+      final data = Map<String, dynamic>.from(raw as Map);
+      callback(data['userId']?.toString() ?? '');
+    });
+  }
+
+  void onPartnerOffline(void Function(String userId, DateTime lastSeen) callback) {
+    _socket.off('user-offline');
+    _socket.on('user-offline', (raw) {
+      final data = Map<String, dynamic>.from(raw as Map);
+      final userId   = data['userId']?.toString() ?? '';
+      final lastSeen = data['lastSeen'] != null
+          ? DateTime.tryParse(data['lastSeen'].toString()) ?? DateTime.now()
+          : DateTime.now();
+      callback(userId, lastSeen);
+    });
+  }
+
+  // ── Locket ────────────────────────────────────────────────────────────────
   void onLocketReceived(void Function(Map<String, dynamic>) callback) {
     _socket.off('locket-photo-received');
     _socket.on('locket-photo-received', (raw) => callback(Map<String, dynamic>.from(raw as Map)));
   }
 
+  // ── Video Call ────────────────────────────────────────────────────────────
   void onIncomingCall(void Function(Map<String, dynamic>) callback) {
     _socket.off('incoming-video-call');
     _socket.on('incoming-video-call', (raw) => callback(Map<String, dynamic>.from(raw as Map)));
@@ -78,14 +112,14 @@ class SocketClient {
     _socket.on('video-call-ended', (_) => callback());
   }
 
-  // ── Emit các sự kiện ─────────────────────────────────────────────────────
-  void sendMessage(Map<String, dynamic> data)    => _socket.emit('send-message',         data);
-  void emitTyping(Map<String, dynamic> data)     => _socket.emit('user-typing',          data);
-  void emitStopTyping(Map<String, dynamic> data) => _socket.emit('user-stopped-typing',  data);
-  void shareLocket(Map<String, dynamic> data)    => _socket.emit('share-locket-photo',   data);
-  void initiateCall(Map<String, dynamic> data)   => _socket.emit('initiate-video-call',  data);
-  void acceptCall(Map<String, dynamic> data)     => _socket.emit('accept-video-call',    data);
-  void endCall(Map<String, dynamic> data)        => _socket.emit('end-video-call',       data);
+  // ── Emit ──────────────────────────────────────────────────────────────────
+  void sendMessage(Map<String, dynamic> data)    => _socket.emit('send-message',        data);
+  void emitTyping(Map<String, dynamic> data)     => _socket.emit('user-typing',         data);
+  void emitStopTyping(Map<String, dynamic> data) => _socket.emit('user-stopped-typing', data);
+  void shareLocket(Map<String, dynamic> data)    => _socket.emit('share-locket-photo',  data);
+  void initiateCall(Map<String, dynamic> data)   => _socket.emit('initiate-video-call', data);
+  void acceptCall(Map<String, dynamic> data)     => _socket.emit('accept-video-call',   data);
+  void endCall(Map<String, dynamic> data)        => _socket.emit('end-video-call',      data);
 
   void off(String event) => _socket.off(event);
 }

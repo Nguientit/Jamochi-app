@@ -1,10 +1,14 @@
+// ui/screens/main/main_screen.dart
+// 📁 JAMOCHI_APP/lib/ui/screens/main/main_screen.dart
+// 🛡️ FIX: ChatListScreen show ở giữa, tap vào chat mới navigate tới ChatScreen
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../mood/mood_screen.dart';
-import '../ai/ai_screen.dart';
-import '../chat/chat_screen.dart';
+import '../achievement/achievement_screen.dart';
+import '../chat/chat_list_screen.dart';
 import '../vault/vault_screen.dart';
 import '../settings/settings_screen.dart';
 import '../../../data/providers/mood_provider.dart';
@@ -18,20 +22,22 @@ class MainScreen extends ConsumerStatefulWidget {
 }
 
 class _MainScreenState extends ConsumerState<MainScreen> {
-  int _currentIndex = 2;
+  int _currentIndex = 0;
 
+  // 🎯 ChatListScreen ở giữa thay vì ChatScreen
   final List<Widget> _screens = const [
     MoodScreen(),
-    AiScreen(),
-    ChatScreen(),
+    AchievementScreen(),
+    ChatListScreen(),
     VaultScreen(),
     SettingsScreen(),
   ];
 
   void _onTap(int index) {
     setState(() => _currentIndex = index);
+
     if (index == 2) {
-      Future.microtask(() => ref.read(chatProvider.notifier).clearUnreadBadge());
+      ref.read(chatProvider.notifier).clearUnread();
     }
   }
 
@@ -39,79 +45,125 @@ class _MainScreenState extends ConsumerState<MainScreen> {
   Widget build(BuildContext context) {
     final palette = ref.watch(currentPaletteProvider);
     final chatState = ref.watch(chatProvider);
-    final hasUnread = chatState.hasUnreadMessages;
-
-    final backgroundColor = palette.primary.withOpacity(0.4);
+    final hasUnread = chatState.hasUnread;
 
     return Scaffold(
-      backgroundColor: backgroundColor,
-      body: Column(
-        children: [
-          Expanded(
-            child: IndexedStack(
-              index: _currentIndex,
-              children: _screens,
-            ),
-          ),
-          _buildThemeSyncNavBar(palette, hasUnread),
-        ],
-      ),
+      backgroundColor: palette.primary.withValues(alpha: 0.25),
+      extendBody: true,
+
+      body: IndexedStack(index: _currentIndex, children: _screens),
+      bottomNavigationBar: _buildNavBar(palette, hasUnread),
     );
   }
 
-  Widget _buildThemeSyncNavBar(dynamic palette, bool hasUnread) {
+  Widget _buildNavBar(dynamic palette, bool hasUnread) {
     return Container(
       padding: const EdgeInsets.only(left: 16, right: 16, bottom: 24, top: 10),
+      color: Colors.transparent,
       child: SafeArea(
         top: false,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 500),
+          duration: const Duration(milliseconds: 400),
           height: 70,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 10),
           decoration: BoxDecoration(
-            color: palette.accent, 
+            color: palette.accent,
             borderRadius: BorderRadius.circular(35),
             boxShadow: [
               BoxShadow(
-                color: palette.accent.withOpacity(0.4),
+                color: palette.accent.withValues(alpha: 0.4),
                 blurRadius: 20,
                 offset: const Offset(0, 8),
-              )
+              ),
             ],
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildElasticItem(Icons.wb_sunny_rounded, 'Mood', 0, palette),
-              _buildElasticItem(Icons.smart_toy_rounded, 'Mochi', 1, palette),
-              _buildElasticItem(
-                Icons.forum_rounded, 
-                'Chat', 
-                2, 
-                palette, 
-                showBadge: hasUnread && _currentIndex != 2
+              _NavItem(
+                icon: Icons.wb_sunny_rounded,
+                label: 'Mood',
+                navIndex: 0,
+                currentIndex: _currentIndex,
+                palette: palette,
+                onTap: _onTap,
               ),
-              _buildElasticItem(Icons.favorite_rounded, 'Vault', 3, palette),
-              _buildElasticItem(Icons.settings_rounded, 'Setting', 4, palette),
+              _NavItem(
+                icon: Icons.emoji_events_rounded,
+                label: 'Thành tựu',
+                navIndex: 1,
+                currentIndex: _currentIndex,
+                palette: palette,
+                onTap: _onTap,
+              ),
+              _NavItem(
+                icon: Icons.forum_rounded,
+                label: 'Chat',
+                navIndex: 2,
+                currentIndex: _currentIndex,
+                palette: palette,
+                onTap: _onTap,
+                showBadge: hasUnread,
+              ),
+              _NavItem(
+                icon: Icons.favorite_rounded,
+                label: 'Vault',
+                navIndex: 3,
+                currentIndex: _currentIndex,
+                palette: palette,
+                onTap: _onTap,
+              ),
+              _NavItem(
+                icon: Icons.settings_rounded,
+                label: 'Setting',
+                navIndex: 4,
+                currentIndex: _currentIndex,
+                palette: palette,
+                onTap: _onTap,
+              ),
             ],
           ),
         ),
       ),
     );
   }
+}
 
-  Widget _buildElasticItem(IconData icon, String label, int index, dynamic palette, {bool showBadge = false}) {
-    final isActive = _currentIndex == index;
+class _NavItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final int navIndex;
+  final int currentIndex;
+  final dynamic palette;
+  final void Function(int) onTap;
+  final bool showBadge;
+
+  const _NavItem({
+    required this.icon,
+    required this.label,
+    required this.navIndex,
+    required this.currentIndex,
+    required this.palette,
+    required this.onTap,
+    this.showBadge = false,
+  });
+
+  bool get isActive => navIndex == currentIndex;
+
+  @override
+  Widget build(BuildContext context) {
+    final accentColor = palette.accent as Color;
+    final inactiveColor = Colors.white.withValues(alpha: 0.65);
 
     return GestureDetector(
-      onTap: () => _onTap(index),
+      onTap: () => onTap(navIndex),
       behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.easeOutCubic, 
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOutCubic,
         padding: EdgeInsets.symmetric(
-          horizontal: isActive ? 16 : 12, 
-          vertical: 10
+          horizontal: isActive ? 16 : 12,
+          vertical: 10,
         ),
         decoration: BoxDecoration(
           color: isActive ? Colors.white : Colors.transparent,
@@ -126,19 +178,22 @@ class _MainScreenState extends ConsumerState<MainScreen> {
                 Icon(
                   icon,
                   size: 24,
-                  color: isActive ? palette.accent : Colors.white,
+                  color: isActive ? accentColor : inactiveColor,
                 ),
                 if (showBadge)
                   Positioned(
-                    top: -2,
-                    right: -2,
+                    top: -3,
+                    right: -3,
                     child: Container(
                       width: 10,
                       height: 10,
                       decoration: BoxDecoration(
                         color: Colors.redAccent,
                         shape: BoxShape.circle,
-                        border: Border.all(color: isActive ? Colors.white : palette.accent, width: 2),
+                        border: Border.all(
+                          color: isActive ? Colors.white : accentColor,
+                          width: 1.5,
+                        ),
                       ),
                     ),
                   ),
@@ -154,17 +209,14 @@ class _MainScreenState extends ConsumerState<MainScreen> {
                         padding: const EdgeInsets.only(left: 8),
                         child: Text(
                           label,
-                          maxLines: 1, 
-                          softWrap: false,
-                          overflow: TextOverflow.clip,
                           style: GoogleFonts.nunito(
-                            color: palette.accent,
+                            color: accentColor,
                             fontSize: 14,
-                            fontWeight: FontWeight.w900, 
+                            fontWeight: FontWeight.w900,
                           ),
                         ),
                       )
-                    : const SizedBox(width: 0, height: 0),
+                    : const SizedBox.shrink(),
               ),
             ),
           ],

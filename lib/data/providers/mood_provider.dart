@@ -9,23 +9,23 @@ import '../network/socket_client.dart';
 
 // ── State ─────────────────────────────────────────────────────────────────────
 class MoodThemeState {
-  final String      currentMood;
+  final String currentMood;
   final MoodPalette palette;
-  final bool        isPartnerMood; // true = đang hiển thị màu của partner
-  final bool        isLoading;
-  final String?     errorMessage;
+  final bool isPartnerMood; // true = đang hiển thị màu của partner
+  final bool isLoading;
+  final String? errorMessage;
 
   const MoodThemeState({
     required this.currentMood,
     required this.palette,
     this.isPartnerMood = false,
-    this.isLoading     = false,
+    this.isLoading = false,
     this.errorMessage,
   });
 
   static MoodThemeState get defaultState => MoodThemeState(
     currentMood: 'normal',
-    palette:     AppColors.getPalette('normal'),
+    palette: AppColors.getPalette('normal'),
   );
 
   MoodThemeState copyWith({
@@ -36,11 +36,11 @@ class MoodThemeState {
     String? errorMessage,
   }) {
     return MoodThemeState(
-      currentMood:   currentMood   ?? this.currentMood,
-      palette:       palette       ?? this.palette,
+      currentMood: currentMood ?? this.currentMood,
+      palette: palette ?? this.palette,
       isPartnerMood: isPartnerMood ?? this.isPartnerMood,
-      isLoading:     isLoading     ?? this.isLoading,
-      errorMessage:  errorMessage,
+      isLoading: isLoading ?? this.isLoading,
+      errorMessage: errorMessage,
     );
   }
 }
@@ -48,9 +48,10 @@ class MoodThemeState {
 // ── Notifier ──────────────────────────────────────────────────────────────────
 class MoodThemeNotifier extends StateNotifier<MoodThemeState> {
   final MoodRepository _repo;
-  final SocketClient   _socket;
+  final SocketClient _socket;
 
-  MoodThemeNotifier(this._repo, this._socket) : super(MoodThemeState.defaultState) {
+  MoodThemeNotifier(this._repo, this._socket)
+    : super(MoodThemeState.defaultState) {
     _listenToPartnerMood(); // Bắt đầu lắng nghe real-time ngay khi khởi tạo
   }
 
@@ -58,11 +59,10 @@ class MoodThemeNotifier extends StateNotifier<MoodThemeState> {
   void _listenToPartnerMood() {
     _socket.onPartnerMoodChanged((data) {
       final mood = data['mood'] as String? ?? 'normal';
-      print('[MoodProvider] Partner mood changed to: $mood — đổi theme!');
       state = MoodThemeState(
-        currentMood:   mood,
-        palette:       AppColors.getPalette(mood),
-        isPartnerMood: true,  // Đánh dấu đây là mood của partner
+        currentMood: mood,
+        palette: AppColors.getPalette(mood),
+        isPartnerMood: true, // Đánh dấu đây là mood của partner
       );
     });
   }
@@ -75,22 +75,19 @@ class MoodThemeNotifier extends StateNotifier<MoodThemeState> {
 
       if (res['success'] == true && res['data'] != null) {
         final data = res['data'] as Map<String, dynamic>;
-        // 🛡️ FIX: Backend trả về mood của PARTNER để chàng trai thấy màu đúng
         final mood = data['mood'] as String? ?? 'normal';
 
         state = MoodThemeState(
-          currentMood:   mood,
-          palette:       AppColors.getPalette(mood),
-          // has_forecast = false nghĩa là chưa có dự báo, dùng màu mặc định
+          currentMood: mood,
+          palette: AppColors.getPalette(
+            mood,
+          ), // has_forecast = false nghĩa là chưa có dự báo, dùng màu mặc định
           isPartnerMood: data['has_forecast'] == true,
         );
       } else {
-        // Không có dữ liệu → màu mặc định, không crash
         state = MoodThemeState.defaultState;
       }
     } catch (e) {
-      print('[MoodProvider] fetchLatestMood error: $e');
-      // Không crash app, chỉ log lỗi và giữ state cũ
       state = state.copyWith(isLoading: false, errorMessage: e.toString());
     }
   }
@@ -99,10 +96,10 @@ class MoodThemeNotifier extends StateNotifier<MoodThemeState> {
   Future<void> updateAndSetMood(String moodId) async {
     // Đổi màu local ngay để UX mượt
     state = MoodThemeState(
-      currentMood:   moodId,
-      palette:       AppColors.getPalette(moodId),
+      currentMood: moodId,
+      palette: AppColors.getPalette(moodId),
       isPartnerMood: false,
-      isLoading:     true,
+      isLoading: true,
     );
 
     try {
@@ -110,7 +107,6 @@ class MoodThemeNotifier extends StateNotifier<MoodThemeState> {
       // Thành công → tắt loading
       state = state.copyWith(isLoading: false);
     } catch (e) {
-      print('[MoodProvider] updateAndSetMood error: $e');
       state = state.copyWith(isLoading: false, errorMessage: e.toString());
     }
   }
@@ -118,14 +114,14 @@ class MoodThemeNotifier extends StateNotifier<MoodThemeState> {
   // Đổi local (không gọi API) — dùng khi nhận từ socket
   void setMood(String mood, {bool isPartner = false}) {
     state = MoodThemeState(
-      currentMood:   mood,
-      palette:       AppColors.getPalette(mood),
+      currentMood: mood,
+      palette: AppColors.getPalette(mood),
       isPartnerMood: isPartner,
     );
   }
 
   void clearError() => state = state.copyWith(errorMessage: null);
-  void reset()       => state = MoodThemeState.defaultState;
+  void reset() => state = MoodThemeState.defaultState;
 
   @override
   void dispose() {
@@ -135,18 +131,19 @@ class MoodThemeNotifier extends StateNotifier<MoodThemeState> {
 }
 
 // ── Providers ─────────────────────────────────────────────────────────────────
-final moodRepositoryProvider = Provider<MoodRepository>((_) => MoodRepository());
+final moodRepositoryProvider = Provider<MoodRepository>(
+  (_) => MoodRepository(),
+);
 
-// 🛡️ FIX: SocketClient là singleton, dùng chung toàn app
 final socketClientProvider = Provider<SocketClient>((_) => SocketClient());
 
-final moodThemeProvider = StateNotifierProvider<MoodThemeNotifier, MoodThemeState>((ref) {
-  final repo   = ref.read(moodRepositoryProvider);
-  final socket = ref.read(socketClientProvider);
-  return MoodThemeNotifier(repo, socket);
-});
+final moodThemeProvider =
+    StateNotifierProvider<MoodThemeNotifier, MoodThemeState>((ref) {
+      final repo = ref.read(moodRepositoryProvider);
+      final socket = ref.read(socketClientProvider);
+      return MoodThemeNotifier(repo, socket);
+    });
 
-// Shortcut lấy palette hiện tại
 final currentPaletteProvider = Provider<MoodPalette>((ref) {
   return ref.watch(moodThemeProvider).palette;
 });

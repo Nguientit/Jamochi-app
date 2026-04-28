@@ -121,7 +121,7 @@ class _MoodScreenState extends ConsumerState<MoodScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          isBoy ? 'Trạm Quan Sát Tâm Trạng Chị Nhà' : 'Dự Báo Tâm Trạng',
+          isBoy ? 'Trạm Quan Sát Tâm Trạng' : 'Dự Báo Tâm Trạng',
         ),
         actions: [
           if (moodState.isPartnerMood)
@@ -136,7 +136,7 @@ class _MoodScreenState extends ConsumerState<MoodScreen> {
                 '💕 Của Jaman',
                 style: GoogleFonts.nunito(
                   fontSize: 11,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w900,
                   color: palette.accent,
                 ),
               ),

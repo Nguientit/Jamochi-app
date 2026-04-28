@@ -27,7 +27,11 @@ class AuthRepository {
     try {
       final res = await _dioClient.dio.post(
         ApiConstants.register,
-        data: {'email': email, 'password': password, 'display_name': displayName},
+        data: {
+          'email': email,
+          'password': password,
+          'display_name': displayName,
+        },
       );
       return res.data;
     } on DioException catch (e) {
@@ -68,8 +72,18 @@ class AuthRepository {
     }
   }
 
+  Future<void> updateFcmToken(String token) async {
+    try {
+      // Nhớ sửa lại đường dẫn '/auth/fcm-token' cho khớp với cấu hình API của bạn nhé
+      await _dioClient.dio.patch('/auth/fcm-token', data: {'fcm_token': token});
+      print('✅ Đã gửi FCM Token lên Server thành công!');
+    } catch (e) {
+      print('🚨 Lỗi gửi FCM Token lên Server: $e');
+    }
+  }
+
   // ── Lưu token ────────────────────────────────────────────────────────────────
   Future<void> saveToken(String token) => _dioClient.saveToken(token);
-  Future<void> clearToken()            => _dioClient.clearToken();
-  Future<String?> getToken()           => _dioClient.getToken();
+  Future<void> clearToken() => _dioClient.clearToken();
+  Future<String?> getToken() => _dioClient.getToken();
 }

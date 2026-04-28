@@ -7,6 +7,7 @@ import '../../models/user.dart';
 import '../../models/couple.dart';
 import '../repositories/auth_repository.dart';
 import '../network/socket_client.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 enum AuthStatus { initial, loading, authenticated, unauthenticated, error }
 
@@ -56,6 +57,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   // Kiểm tra token khi khởi động app
   Future<void> _checkAuth() async {
+    state = state.copyWith(status: AuthStatus.loading);
+
     final token = await _repo.getToken();
     if (token == null) {
       state = state.copyWith(status: AuthStatus.unauthenticated);
@@ -64,14 +67,31 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       final res = await _repo.getMe();
       final data = res['data'];
+
+      final userJson = data['user'] ?? data;
+      final coupleJson = data['couple'];
+
       state = state.copyWith(
         status: AuthStatus.authenticated,
-        user: User.fromJson(data['user']),
-        couple: data['couple'] != null ? Couple.fromJson(data['couple']) : null,
+        user: User.fromJson(userJson),
+        couple: coupleJson != null ? Couple.fromJson(coupleJson) : null,
       );
-      // 🎯 Kết nối socket sau khi xác thực thành công
+
+      // Kết nối socket sau khi xác thực thành công
       _socket.connect(token);
-    } catch (_) {
+
+      try {
+        final fcmToken = await FirebaseMessaging.instance.getToken();
+        if (fcmToken != null) {
+          await _repo.updateFcmToken(fcmToken);
+        }
+      } catch (e) {
+        print('Không thể lấy/gửi FCM Token: $e');
+      }
+    } catch (e, stack) {
+      print(
+        '🚨 [Auth] Lỗi sập Auto-login: $e\n$stack',
+      ); // In lỗi để sau này dễ debug
       await _repo.clearToken();
       state = state.copyWith(status: AuthStatus.unauthenticated);
     }
@@ -93,6 +113,16 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
       // 🎯 Kết nối socket ngay sau khi login
       _socket.connect(token);
+
+      try {
+        final fcmToken = await FirebaseMessaging.instance.getToken();
+        if (fcmToken != null) {
+          await _repo.updateFcmToken(fcmToken);
+        }
+      } catch (e) {
+        print('Không thể lấy/gửi FCM Token: $e');
+      }
+
     } catch (e) {
       state = state.copyWith(
         status: AuthStatus.error,
@@ -119,6 +149,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
         couple: null,
       );
       _socket.connect(token);
+
+      try {
+        final fcmToken = await FirebaseMessaging.instance.getToken();
+        if (fcmToken != null) {
+          await _repo.updateFcmToken(fcmToken);
+        }
+      } catch (e) {
+        print('Không thể lấy/gửi FCM Token: $e');
+      }
     } catch (e) {
       state = state.copyWith(
         status: AuthStatus.error,
@@ -150,7 +189,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> logout() async {
-    _socket.disconnect(); // Ngắt socket khi logout
+    _socket.disconnect();
     await _repo.clearToken();
     state = const AuthState(status: AuthStatus.unauthenticated);
   }
@@ -160,10 +199,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       final res = await _repo.getMe();
       final data = res['data'];
+
+      final userJson = data['user'] ?? data;
+      final coupleJson = data['couple'];
+
       state = state.copyWith(
         status: AuthStatus.authenticated,
-        user: User.fromJson(data['user']),
-        couple: data['couple'] != null ? Couple.fromJson(data['couple']) : null,
+        user: User.fromJson(userJson),
+        couple: coupleJson != null ? Couple.fromJson(coupleJson) : null,
       );
     } catch (e) {
       state = state.copyWith(
