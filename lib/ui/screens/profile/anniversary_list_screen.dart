@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter/services.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../data/providers/auth_provider.dart';
@@ -219,8 +220,15 @@ class _AnniversaryListScreenState extends ConsumerState<AnniversaryListScreen> {
       } catch (_) {}
     }
 
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark,
+      ),
+    );
+
     return Scaffold(
-      extendBodyBehindAppBar: true,
+      extendBodyBehindAppBar: true, // Giúp body chui tọt xuống dưới AppBar
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -236,6 +244,9 @@ class _AnniversaryListScreenState extends ConsumerState<AnniversaryListScreen> {
         ),
       ),
       body: Container(
+        // 🎯 3. THÊM 2 DÒNG NÀY ĐỂ ĐẢM BẢO BACKGROUND LUÔN PHỦ KÍN 100% MÀN HÌNH
+        width: double.infinity,
+        height: double.infinity,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
@@ -333,19 +344,13 @@ class _AnniversaryListScreenState extends ConsumerState<AnniversaryListScreen> {
                           vertical: 10,
                         ),
                         physics: const BouncingScrollPhysics(),
-                        itemCount:
-                            specialDatesState.dates.length +
-                            1, // +1 cho SizedBox ở cuối
+                        itemCount: specialDatesState.dates.length + 1,
                         itemBuilder: (context, index) {
                           if (index == specialDatesState.dates.length) {
-                            return const SizedBox(
-                              height: 80,
-                            ); // Khoảng trống cho nút FAB
+                            return const SizedBox(height: 80);
                           }
 
                           final item = specialDatesState.dates[index];
-
-                          // Tạo màu xen kẽ cho đẹp
                           final isEven = index % 2 == 0;
                           final color = isEven
                               ? const Color(0xFF45B0A6)
@@ -383,7 +388,6 @@ class _AnniversaryListScreenState extends ConsumerState<AnniversaryListScreen> {
           EditSpecialDateBottomSheet.show(
             context,
             onSave: (title, date) async {
-              // Gọi provider thêm ngày
               final success = await ref
                   .read(specialDatesProvider.notifier)
                   .addDate(title, date);

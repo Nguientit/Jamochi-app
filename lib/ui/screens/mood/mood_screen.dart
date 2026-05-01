@@ -22,8 +22,6 @@ class _MoodScreenState extends ConsumerState<MoodScreen> {
   @override
   void initState() {
     super.initState();
-    // 🎯 FIX: Gọi fetchLatestMood khi màn hình khởi tạo
-    // Dùng addPostFrameCallback để tránh gọi trong build()
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(moodThemeProvider.notifier).fetchLatestMood();
     });

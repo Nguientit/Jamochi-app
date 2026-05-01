@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:device_preview/device_preview.dart';
+import 'package:flutter/foundation.dart';
 
 import '../core/theme/app_theme.dart';
 import 'data/providers/auth_provider.dart';
@@ -10,7 +12,6 @@ import 'ui/screens/auth/login_screen.dart';
 import 'ui/screens/auth/invite_screen.dart';
 import 'ui/screens/main/main_screen.dart';
 
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -18,9 +19,12 @@ void main() async {
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
       statusBarIconBrightness: Brightness.dark,
+      systemNavigationBarColor: Colors.transparent,
     ),
   );
 
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  
   if (!kIsWeb) {
     await SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
@@ -28,7 +32,15 @@ void main() async {
     ]);
   }
 
-  runApp(const ProviderScope(child: JamochiApp()));
+  runApp(
+    DevicePreview(
+      enabled: !kReleaseMode,
+      builder: (context) => const ProviderScope(
+        // Vẫn giữ ProviderScope để chạy Riverpod
+        child: JamochiApp(),
+      ),
+    ),
+  );
 }
 
 class JamochiApp extends ConsumerWidget {
@@ -41,6 +53,8 @@ class JamochiApp extends ConsumerWidget {
     final theme = AppTheme.fromPalette(moodState.palette);
 
     return MaterialApp(
+      locale: DevicePreview.locale(context),
+      builder: DevicePreview.appBuilder,
       title: 'Jamochi 🌸',
       debugShowCheckedModeBanner: false,
       theme: theme,

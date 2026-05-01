@@ -19,6 +19,16 @@ class AppTheme {
         onSurface: AppColors.textDark,
       ),
 
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
+        },
+      ),
+
       textTheme: GoogleFonts.nunitoTextTheme(),
 
       // AppBar trong suốt, không có shadow

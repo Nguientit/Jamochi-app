@@ -24,7 +24,6 @@ class MainScreen extends ConsumerStatefulWidget {
 class _MainScreenState extends ConsumerState<MainScreen> {
   int _currentIndex = 0;
 
-  // 🎯 ChatListScreen ở giữa thay vì ChatScreen
   final List<Widget> _screens = const [
     MoodScreen(),
     AchievementScreen(),
