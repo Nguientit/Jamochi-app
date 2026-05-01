@@ -25,7 +25,7 @@ class MessageRepository {
       if (data is! List) return [];
       return List<Map<String, dynamic>>.from(data);
     } on DioException catch (e) {
-      print('[MessageRepo] ❌ getMessages: ${e.response?.statusCode} ${e.response?.data}');
+      // Lỗi fetch messages
       throw _parseError(e, 'Không thể tải tin nhắn');
     }
   }
@@ -43,7 +43,7 @@ class MessageRepository {
       );
       return res.data as Map<String, dynamic>;
     } on DioException catch (e) {
-      print('[MessageRepo] ❌ sendMessage: ${e.response?.data}');
+      // Lỗi send message
       throw _parseError(e, 'Gửi tin nhắn thất bại');
     }
   }
@@ -72,7 +72,7 @@ class MessageRepository {
       );
       return res.data as Map<String, dynamic>;
     } on DioException catch (e) {
-      print('[MessageRepo] ❌ sendImage: ${e.response?.data}');
+      // Lỗi send image
       throw _parseError(e, 'Gửi ảnh thất bại');
     }
   }

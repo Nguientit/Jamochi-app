@@ -8,6 +8,7 @@ import '../../../data/providers/auth_provider.dart';
 import '../../../data/providers/chat_provider.dart';
 import './chat_screen.dart';
 import '../ai/ai_screen.dart';
+import '../settings/settings_screen.dart';
 
 class ChatListScreen extends ConsumerWidget {
   const ChatListScreen({super.key});
@@ -31,8 +32,8 @@ class ChatListScreen extends ConsumerWidget {
     final user = ref.watch(authProvider).user;
     final chatState = ref.watch(chatProvider);
 
-    // 🎯 Thông tin partner (từ auth)
-    final partnerId = ref.watch(authProvider).couple?.partnerId(user?.id ?? '') ?? '';
+    final partnerId =
+        ref.watch(authProvider).couple?.partnerId(user?.id ?? '') ?? '';
     final partnerName = user?.gender == 'male' ? 'Hà' : 'Nguyên';
 
     String lastMessageText = 'Chưa có tin nhắn';
@@ -68,6 +69,57 @@ class ChatListScreen extends ConsumerWidget {
             color: AppColors.textDark,
           ),
         ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16.0),
+            child: GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                );
+              },
+              child: Hero(
+                tag: 'user_avatar_setting',
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.08),
+                        blurRadius: 8,
+                      ),
+                    ],
+                  ),
+                  child: CircleAvatar(
+                    radius: 18,
+                    backgroundColor: Colors.pink.shade100,
+                    // 1. Nếu có link thật thì hiện ảnh
+                    backgroundImage:
+                        (user?.avatarUrl != null && user!.avatarUrl!.isNotEmpty)
+                        ? NetworkImage(user!.avatarUrl!)
+                        : null,
+                    // 2. Nếu KHÔNG có ảnh thì lấy chữ cái đầu
+                    child: (user?.avatarUrl == null || user!.avatarUrl!.isEmpty)
+                        ? Text(
+                            (user?.displayLabel.isNotEmpty == true)
+                                ? user!.displayLabel[0].toUpperCase()
+                                : 'J',
+                            style: GoogleFonts.nunito(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.pink.shade600,
+                            ),
+                          )
+                        : null,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
         elevation: 0,
         backgroundColor: Colors.white,
         foregroundColor: AppColors.textDark,
@@ -86,7 +138,10 @@ class ChatListScreen extends ConsumerWidget {
                     CircleAvatar(
                       radius: 40,
                       backgroundColor: palette.accent.withValues(alpha: 0.2),
-                      child: Text(user?.gender == 'male' ? '👧' : '🧑', style: const TextStyle(fontSize: 44)),
+                      child: Text(
+                        user?.gender == 'male' ? '👧' : '🧑',
+                        style: const TextStyle(fontSize: 44),
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Text(
@@ -113,7 +168,10 @@ class ChatListScreen extends ConsumerWidget {
                     CircleAvatar(
                       radius: 40,
                       backgroundColor: palette.accent.withValues(alpha: 0.2),
-                      child: Text(user?.gender == 'male' ? '🧑' : '👧', style: const TextStyle(fontSize: 44)),
+                      child: Text(
+                        user?.gender == 'male' ? '🧑' : '👧',
+                        style: const TextStyle(fontSize: 44),
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Text(
@@ -165,9 +223,7 @@ class ChatListScreen extends ConsumerWidget {
                   onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(
-                        builder: (_) => const AiScreen(),
-                      ),
+                      MaterialPageRoute(builder: (_) => const AiScreen()),
                     );
                   },
                 ),
@@ -207,7 +263,10 @@ class ChatListScreen extends ConsumerWidget {
                 CircleAvatar(
                   radius: 32,
                   backgroundColor: palette.accent.withValues(alpha: 0.2),
-                  child: Text(avatarLabel, style: const TextStyle(fontSize: 32)),
+                  child: Text(
+                    avatarLabel,
+                    style: const TextStyle(fontSize: 32),
+                  ),
                 ),
                 // Online indicator
                 if (isOnline)

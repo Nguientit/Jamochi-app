@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../data/providers/auth_provider.dart';
+import '../../screens/main/main_screen.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -15,14 +17,17 @@ class LoginScreen extends ConsumerStatefulWidget {
 
 class _LoginScreenState extends ConsumerState<LoginScreen>
     with SingleTickerProviderStateMixin {
-  final _emailCtrl    = TextEditingController();
+  final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
-  final _formKey      = GlobalKey<FormState>();
+  final _formKey = GlobalKey<FormState>();
 
   bool _obscurePass = true;
+  bool _rememberMe = true;
+  bool _isLoggingIn = false;
+
   late AnimationController _animCtrl;
-  late Animation<double>   _fadeAnim;
-  late Animation<Offset>   _slideAnim;
+  late Animation<double> _fadeAnim;
+  late Animation<Offset> _slideAnim;
 
   @override
   void initState() {
@@ -31,10 +36,29 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       vsync: this,
       duration: const Duration(milliseconds: 800),
     );
-    _fadeAnim  = CurvedAnimation(parent: _animCtrl, curve: Curves.easeOut);
-    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.08), end: Offset.zero)
-        .animate(CurvedAnimation(parent: _animCtrl, curve: Curves.easeOut));
+    _fadeAnim = CurvedAnimation(parent: _animCtrl, curve: Curves.easeOut);
+    _slideAnim = Tween<Offset>(
+      begin: const Offset(0, 0.08),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _animCtrl, curve: Curves.easeOut));
+
     _animCtrl.forward();
+    _loadSavedCredentials();
+  }
+
+  Future<void> _loadSavedCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedEmail = prefs.getString('saved_email') ?? '';
+    final savedPassword = prefs.getString('saved_password') ?? '';
+    final rememberMe = prefs.getBool('remember_me') ?? true;
+
+    if (rememberMe && savedEmail.isNotEmpty && savedPassword.isNotEmpty) {
+      setState(() {
+        _emailCtrl.text = savedEmail;
+        _passwordCtrl.text = savedPassword;
+        _rememberMe = true;
+      });
+    }
   }
 
   @override
@@ -46,34 +70,51 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   }
 
   Future<void> _login() async {
+    // 🎯 Tự động tắt lỗi cũ (nếu có) khi bấm nút
+    ref.read(authProvider.notifier).clearError();
+
     if (!_formKey.currentState!.validate()) return;
-    await ref.read(authProvider.notifier).login(
-      _emailCtrl.text.trim(),
-      _passwordCtrl.text,
-    );
+
+    setState(() => _isLoggingIn = true);
+
+    final email = _emailCtrl.text.trim();
+    final password = _passwordCtrl.text;
+
+    final prefs = await SharedPreferences.getInstance();
+    if (_rememberMe) {
+      await prefs.setString('saved_email', email);
+      await prefs.setString('saved_password', password);
+      await prefs.setBool('remember_me', true);
+    } else {
+      await prefs.remove('saved_email');
+      await prefs.remove('saved_password');
+      await prefs.setBool('remember_me', false);
+    }
+
+    await ref.read(authProvider.notifier).login(email, password);
+
+    if (mounted) {
+      setState(() => _isLoggingIn = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
 
-    // Hiển thị lỗi
-    ref.listen(authProvider, (prev, next) {
-      if (next.errorMessage != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(next.errorMessage!,
-                style: GoogleFonts.nunito(color: Colors.white)),
-            backgroundColor: AppColors.error,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            margin: const EdgeInsets.all(16),
+    ref.listen(authProvider, (previous, next) {
+      // Bắt sự kiện khi trạng thái chuyển sang authenticated
+      if (next.isAuthenticated) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(
+            // 💡 LƯU Ý: Thay 'MainScreen' bằng đúng tên màn hình chính của bạn
+            builder: (context) => const MainScreen(),
           ),
+          (route) =>
+              false, // Xóa sạch stack để không back lại trang login được nữa
         );
-        ref.read(authProvider.notifier).clearError();
       }
     });
-
     return Scaffold(
       body: Stack(
         children: [
@@ -81,7 +122,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
-                colors: [Color(0xFFFFD6E0), Color(0xFFFFF5E4), Color(0xFFC8B6E2)],
+                colors: [
+                  Color(0xFFFFD6E0),
+                  Color(0xFFFFF5E4),
+                  Color(0xFFC8B6E2),
+                ],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
@@ -89,9 +134,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
           ),
 
           // Bong bóng trang trí
-          Positioned(top: -60,  right: -60,  child: _Bubble(200, AppColors.romanticSecondary.withOpacity(0.25))),
-          Positioned(bottom: -80, left: -40,  child: _Bubble(220, AppColors.sadPrimary.withOpacity(0.3))),
-          Positioned(top: 200,  left: -30,   child: _Bubble(120, AppColors.happySecondary.withOpacity(0.2))),
+          Positioned(
+            top: -60,
+            right: -60,
+            child: _Bubble(
+              200,
+              AppColors.romanticSecondary.withValues(alpha: 0.25),
+            ),
+          ),
+          Positioned(
+            bottom: -80,
+            left: -40,
+            child: _Bubble(220, AppColors.sadPrimary.withValues(alpha: 0.3)),
+          ),
+          Positioned(
+            top: 200,
+            left: -30,
+            child: _Bubble(
+              120,
+              AppColors.happySecondary.withValues(alpha: 0.2),
+            ),
+          ),
 
           // ── Nội dung ────────────────────────────────────────────────────────
           SafeArea(
@@ -111,32 +174,43 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                         child: Column(
                           children: [
                             Container(
-                              width: 90, height: 90,
+                              width: 90,
+                              height: 90,
                               decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.7),
+                                color: Colors.white.withValues(alpha: 0.7),
                                 shape: BoxShape.circle,
                                 boxShadow: [
                                   BoxShadow(
-                                    color: AppColors.romanticSecondary.withOpacity(0.3),
-                                    blurRadius: 24, offset: const Offset(0, 8),
+                                    color: AppColors.romanticSecondary
+                                        .withValues(alpha: 0.3),
+                                    blurRadius: 24,
+                                    offset: const Offset(0, 8),
                                   ),
                                 ],
                               ),
                               child: const Center(
-                                child: Text('🌸', style: TextStyle(fontSize: 44)),
+                                child: Text(
+                                  '🌸',
+                                  style: TextStyle(fontSize: 44),
+                                ),
                               ),
                             ),
                             const SizedBox(height: 16),
-                            Text('Jamochi',
+                            Text(
+                              'Jamochi',
                               style: GoogleFonts.playfairDisplay(
-                                fontSize: 38, fontWeight: FontWeight.w700,
-                                color: AppColors.textDark, letterSpacing: 1,
+                                fontSize: 38,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textDark,
+                                letterSpacing: 1,
                               ),
                             ),
                             const SizedBox(height: 6),
-                            Text('Chỉ dành cho Jaman 💕',
+                            Text(
+                              'Chỉ dành cho Jaman 💕',
                               style: GoogleFonts.nunito(
-                                fontSize: 15, color: AppColors.textMedium,
+                                fontSize: 15,
+                                color: AppColors.textMedium,
                               ),
                             ),
                           ],
@@ -149,12 +223,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                       Container(
                         padding: const EdgeInsets.all(28),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.75),
+                          color: Colors.white.withValues(alpha: 0.75),
                           borderRadius: BorderRadius.circular(28),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.06),
-                              blurRadius: 30, offset: const Offset(0, 10),
+                              color: Colors.black.withValues(alpha: 0.06),
+                              blurRadius: 30,
+                              offset: const Offset(0, 10),
                             ),
                           ],
                         ),
@@ -163,16 +238,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('Chào mừng trở lại',
+                              Text(
+                                'Chào mừng trở lại',
                                 style: GoogleFonts.playfairDisplay(
-                                  fontSize: 22, fontWeight: FontWeight.w700,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w700,
                                   color: AppColors.textDark,
                                 ),
                               ),
                               const SizedBox(height: 4),
-                              Text('Đăng nhập để gặp Jimin from Hải Phòng nhóee!',
+                              Text(
+                                'Đăng nhập để gặp Jimin from Hải Phòng nhóee!',
                                 style: GoogleFonts.nunito(
-                                  fontSize: 14, color: AppColors.textMedium,
+                                  fontSize: 14,
+                                  color: AppColors.textMedium,
                                 ),
                               ),
                               const SizedBox(height: 28),
@@ -183,14 +262,30 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                               TextFormField(
                                 controller: _emailCtrl,
                                 keyboardType: TextInputType.emailAddress,
-                                style: GoogleFonts.nunito(fontSize: 15, color: AppColors.textDark),
+                                style: GoogleFonts.nunito(
+                                  fontSize: 15,
+                                  color: AppColors.textDark,
+                                ),
+                                // 🎯 Tự xóa lỗi khi bắt đầu gõ lại
+                                onChanged: (val) {
+                                  if (authState.errorMessage != null) {
+                                    ref
+                                        .read(authProvider.notifier)
+                                        .clearError();
+                                  }
+                                },
                                 decoration: const InputDecoration(
                                   hintText: 'email@example.com',
-                                  prefixIcon: Icon(Icons.mail_outline_rounded, size: 20),
+                                  prefixIcon: Icon(
+                                    Icons.mail_outline_rounded,
+                                    size: 20,
+                                  ),
                                 ),
                                 validator: (v) {
-                                  if (v == null || v.isEmpty) return 'Nhập email của bạn';
-                                  if (!v.contains('@')) return 'Email không hợp lệ';
+                                  if (v == null || v.isEmpty)
+                                    return 'Nhập email của bạn';
+                                  if (!v.contains('@'))
+                                    return 'Email không hợp lệ';
                                   return null;
                                 },
                               ),
@@ -202,32 +297,128 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                               TextFormField(
                                 controller: _passwordCtrl,
                                 obscureText: _obscurePass,
-                                style: GoogleFonts.nunito(fontSize: 15, color: AppColors.textDark),
+                                style: GoogleFonts.nunito(
+                                  fontSize: 15,
+                                  color: AppColors.textDark,
+                                ),
+                                // 🎯 Tự xóa lỗi khi bắt đầu gõ lại
+                                onChanged: (val) {
+                                  if (authState.errorMessage != null) {
+                                    ref
+                                        .read(authProvider.notifier)
+                                        .clearError();
+                                  }
+                                },
                                 decoration: InputDecoration(
                                   hintText: '••••••••',
-                                  prefixIcon: const Icon(Icons.lock_outline_rounded, size: 20),
+                                  prefixIcon: const Icon(
+                                    Icons.lock_outline_rounded,
+                                    size: 20,
+                                  ),
                                   suffixIcon: IconButton(
                                     icon: Icon(
-                                      _obscurePass ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                                      size: 20, color: AppColors.textLight,
+                                      _obscurePass
+                                          ? Icons.visibility_off_outlined
+                                          : Icons.visibility_outlined,
+                                      size: 20,
+                                      color: AppColors.textLight,
                                     ),
-                                    onPressed: () => setState(() => _obscurePass = !_obscurePass),
+                                    onPressed: () => setState(
+                                      () => _obscurePass = !_obscurePass,
+                                    ),
                                   ),
                                 ),
                                 validator: (v) {
-                                  if (v == null || v.isEmpty) return 'Nhập mật khẩu';
-                                  if (v.length < 5) return 'Mật khẩu tối thiểu 5 ký tự';
+                                  if (v == null || v.isEmpty)
+                                    return 'Nhập mật khẩu';
+                                  if (v.length < 5)
+                                    return 'Mật khẩu tối thiểu 5 ký tự';
                                   return null;
                                 },
                               ),
-                              const SizedBox(height: 32),
+                              const SizedBox(height: 16),
+
+                              // 🎯 KHUNG BÁO LỖI HIỂN THỊ TRỰC TIẾP (INLINE ERROR)
+                              if (authState.errorMessage != null &&
+                                  authState.errorMessage!.isNotEmpty)
+                                AnimatedContainer(
+                                  duration: const Duration(milliseconds: 200),
+                                  margin: const EdgeInsets.only(bottom: 16),
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.shade50,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: Colors.red.shade200,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.error_outline_rounded,
+                                        color: Colors.red.shade600,
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          authState.errorMessage!,
+                                          style: GoogleFonts.nunito(
+                                            color: Colors.red.shade700,
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+
+                              // Checkbox Nhớ mật khẩu
+                              Row(
+                                children: [
+                                  SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: Checkbox(
+                                      value: _rememberMe,
+                                      activeColor: const Color(0xFFE8547A),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      onChanged: (val) {
+                                        setState(() {
+                                          _rememberMe = val ?? false;
+                                        });
+                                      },
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  GestureDetector(
+                                    onTap: () {
+                                      setState(() {
+                                        _rememberMe = !_rememberMe;
+                                      });
+                                    },
+                                    child: Text(
+                                      'Ghi nhớ đăng nhập',
+                                      style: GoogleFonts.nunito(
+                                        fontSize: 14,
+                                        color: AppColors.textMedium,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 28),
 
                               // Nút đăng nhập
                               SizedBox(
                                 width: double.infinity,
                                 height: 54,
                                 child: ElevatedButton(
-                                  onPressed: authState.isLoading ? null : _login,
+                                  onPressed: _isLoggingIn ? null : _login,
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: const Color(0xFFE8547A),
                                     shape: RoundedRectangleBorder(
@@ -235,16 +426,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                     ),
                                     elevation: 0,
                                   ),
-                                  child: authState.isLoading
+                                  child: _isLoggingIn
                                       ? const SizedBox(
-                                          width: 22, height: 22,
+                                          width: 22,
+                                          height: 22,
                                           child: CircularProgressIndicator(
-                                            color: Colors.white, strokeWidth: 2.5,
+                                            color: Colors.white,
+                                            strokeWidth: 2.5,
                                           ),
                                         )
-                                      : Text('Đăng nhập',
+                                      : Text(
+                                          'Đăng nhập',
                                           style: GoogleFonts.nunito(
-                                            fontSize: 16, fontWeight: FontWeight.w700,
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w700,
                                             color: Colors.white,
                                           ),
                                         ),
@@ -262,13 +457,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Text('Chưa có tài khoản? ',
-                              style: GoogleFonts.nunito(color: AppColors.textMedium, fontSize: 14),
+                            Text(
+                              'Chưa có tài khoản? ',
+                              style: GoogleFonts.nunito(
+                                color: AppColors.textMedium,
+                                fontSize: 14,
+                              ),
                             ),
                             GestureDetector(
-                              onTap: () => Navigator.push(context,
-                                MaterialPageRoute(builder: (_) => const RegisterScreen())),
-                              child: Text('Đăng ký ngay',
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const RegisterScreen(),
+                                ),
+                              ),
+                              child: Text(
+                                'Đăng ký ngay',
                                 style: GoogleFonts.nunito(
                                   color: const Color(0xFFE8547A),
                                   fontSize: 14,
@@ -294,10 +498,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   }
 
   Widget _buildLabel(String text) {
-    return Text(text,
+    return Text(
+      text,
       style: GoogleFonts.nunito(
-        fontSize: 13, fontWeight: FontWeight.w700,
-        color: AppColors.textMedium, letterSpacing: 0.5,
+        fontSize: 13,
+        fontWeight: FontWeight.w700,
+        color: AppColors.textMedium,
+        letterSpacing: 0.5,
       ),
     );
   }
@@ -312,7 +519,8 @@ class _Bubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: size, height: size,
+      width: size,
+      height: size,
       decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
   }

@@ -23,9 +23,9 @@ class SocketClient {
           .build(),
     );
 
-    _socket.onConnect((_)    => print('[Socket] ✅ Connected: ${_socket.id}'));
-    _socket.onDisconnect((_) => print('[Socket] ❌ Disconnected'));
-    _socket.onConnectError((e) => print('[Socket] ⚠️ Error: $e'));
+    _socket.onConnect((_)    => {});
+    _socket.onDisconnect((_) => {});
+    _socket.onConnectError((e) => {});
   }
 
   void connect(String token) {
@@ -41,7 +41,7 @@ class SocketClient {
     _socket.off('partner-mood-changed');
     _socket.on('partner-mood-changed', (raw) {
       try { callback(Map<String, dynamic>.from(raw as Map)); }
-      catch (e) { print('[Socket] mood parse error: $e'); }
+      catch (e) { /* Lỗi parse mood */ }
     });
   }
 
@@ -120,6 +120,10 @@ class SocketClient {
   void initiateCall(Map<String, dynamic> data)   => _socket.emit('initiate-video-call', data);
   void acceptCall(Map<String, dynamic> data)     => _socket.emit('accept-video-call',   data);
   void endCall(Map<String, dynamic> data)        => _socket.emit('end-video-call',      data);
+  
+  // 🟢 Real-time online/offline status
+  void emitUserOnline(String userId) => _socket.emit('user-online-status', {'userId': userId});
+  void emitUserOffline(String userId) => _socket.emit('user-offline-status', {'userId': userId});
 
   void off(String event) => _socket.off(event);
 }

@@ -1,13 +1,11 @@
-// data/providers/auth_provider.dart
 // 📁 JAMOCHI_APP/lib/data/providers/auth_provider.dart
-// 🛡️ FIX: Kết nối Socket.IO ngay sau khi login để nhận mood real-time
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/user.dart';
 import '../../models/couple.dart';
 import '../repositories/auth_repository.dart';
-import '../network/socket_client.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
+import 'app_providers.dart';
 
 enum AuthStatus { initial, loading, authenticated, unauthenticated, error }
 
@@ -49,16 +47,15 @@ class AuthState {
 
 class AuthNotifier extends StateNotifier<AuthState> {
   final AuthRepository _repo;
-  final SocketClient _socket;
+  final Ref _ref;
 
-  AuthNotifier(this._repo, this._socket) : super(const AuthState()) {
+  AuthNotifier(this._repo, this._ref) : super(const AuthState()) {
+    _ref.read(dioClientProvider).onUnauthorized = logout;
     _checkAuth();
   }
 
-  // Kiểm tra token khi khởi động app
   Future<void> _checkAuth() async {
     state = state.copyWith(status: AuthStatus.loading);
-
     final token = await _repo.getToken();
     if (token == null) {
       state = state.copyWith(status: AuthStatus.unauthenticated);
@@ -67,7 +64,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       final res = await _repo.getMe();
       final data = res['data'];
-
       final userJson = data['user'] ?? data;
       final coupleJson = data['couple'];
 
@@ -77,21 +73,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
         couple: coupleJson != null ? Couple.fromJson(coupleJson) : null,
       );
 
-      // Kết nối socket sau khi xác thực thành công
-      _socket.connect(token);
-
-      try {
-        final fcmToken = await FirebaseMessaging.instance.getToken();
-        if (fcmToken != null) {
-          await _repo.updateFcmToken(fcmToken);
-        }
-      } catch (e) {
-        print('Không thể lấy/gửi FCM Token: $e');
-      }
-    } catch (e, stack) {
-      print(
-        '🚨 [Auth] Lỗi sập Auto-login: $e\n$stack',
-      ); // In lỗi để sau này dễ debug
+      _connectSocket(token, userJson['id']?.toString());
+    } catch (e) {
       await _repo.clearToken();
       state = state.copyWith(status: AuthStatus.unauthenticated);
     }
@@ -111,31 +94,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
         couple: data['couple'] != null ? Couple.fromJson(data['couple']) : null,
       );
 
-      // 🎯 Kết nối socket ngay sau khi login
-      _socket.connect(token);
-
-      try {
-        final fcmToken = await FirebaseMessaging.instance.getToken();
-        if (fcmToken != null) {
-          await _repo.updateFcmToken(fcmToken);
-        }
-      } catch (e) {
-        print('Không thể lấy/gửi FCM Token: $e');
-      }
-
+      _connectSocket(token, data['user']?['id']?.toString());
     } catch (e) {
-      state = state.copyWith(
-        status: AuthStatus.error,
-        errorMessage: e.toString(),
-      );
+      state = state.copyWith(status: AuthStatus.error, errorMessage: e.toString());
     }
   }
 
-  Future<void> register(
-    String email,
-    String password,
-    String displayName,
-  ) async {
+  Future<void> register(String email, String password, String displayName) async {
     state = state.copyWith(status: AuthStatus.loading);
     try {
       final res = await _repo.register(email, password, displayName);
@@ -148,48 +113,17 @@ class AuthNotifier extends StateNotifier<AuthState> {
         user: User.fromJson(data['user']),
         couple: null,
       );
-      _socket.connect(token);
 
-      try {
-        final fcmToken = await FirebaseMessaging.instance.getToken();
-        if (fcmToken != null) {
-          await _repo.updateFcmToken(fcmToken);
-        }
-      } catch (e) {
-        print('Không thể lấy/gửi FCM Token: $e');
-      }
+      _connectSocket(token, data['user']?['id']?.toString());
     } catch (e) {
-      state = state.copyWith(
-        status: AuthStatus.error,
-        errorMessage: e.toString(),
-      );
-    }
-  }
-
-  Future<void> generateInvite() async {
-    try {
-      final res = await _repo.generateInvite();
-      final code = res['data']['invite_code'] as String;
-      state = state.copyWith(inviteCode: code);
-    } catch (e) {
-      state = state.copyWith(errorMessage: e.toString());
-    }
-  }
-
-  Future<bool> acceptInvite(String code) async {
-    try {
-      final res = await _repo.acceptInvite(code);
-      final couple = Couple.fromJson(res['data']);
-      state = state.copyWith(couple: couple);
-      return true;
-    } catch (e) {
-      state = state.copyWith(errorMessage: e.toString());
-      return false;
+      state = state.copyWith(status: AuthStatus.error, errorMessage: e.toString());
     }
   }
 
   Future<void> logout() async {
-    _socket.disconnect();
+    final socket = _ref.read(socketClientProvider);
+    if (state.user?.id != null) socket.emitUserOffline(state.user!.id);
+    socket.disconnect();
     await _repo.clearToken();
     state = const AuthState(status: AuthStatus.unauthenticated);
   }
@@ -199,36 +133,70 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       final res = await _repo.getMe();
       final data = res['data'];
-
-      final userJson = data['user'] ?? data;
-      final coupleJson = data['couple'];
-
       state = state.copyWith(
         status: AuthStatus.authenticated,
-        user: User.fromJson(userJson),
-        couple: coupleJson != null ? Couple.fromJson(coupleJson) : null,
+        user: User.fromJson(data['user'] ?? data),
+        couple: data['couple'] != null ? Couple.fromJson(data['couple']) : null,
       );
     } catch (e) {
-      state = state.copyWith(
-        status: AuthStatus.error,
-        errorMessage: e.toString(),
-      );
+      state = state.copyWith(status: AuthStatus.error, errorMessage: e.toString());
+    }
+  }
+
+  Future<void> generateInvite() async {
+    try {
+      final res = await _repo.generateInvite();
+      state = state.copyWith(inviteCode: res['data']['invite_code'] as String);
+    } catch (e) {
+      state = state.copyWith(errorMessage: e.toString());
+    }
+  }
+
+  Future<bool> acceptInvite(String code) async {
+    try {
+      final res = await _repo.acceptInvite(code);
+      state = state.copyWith(couple: Couple.fromJson(res['data']));
+      return true;
+    } catch (e) {
+      state = state.copyWith(errorMessage: e.toString());
+      return false;
+    }
+  }
+
+  Future<bool> updateAnniversaryDate(DateTime newDate) async {
+    try {
+      final res = await _repo.updateAnniversary(newDate.toIso8601String().split('T')[0]);
+      if (res['success'] == true && state.couple != null) {
+        state = state.copyWith(
+          couple: state.couple!.copyWith(anniversaryDate: newDate.toIso8601String().split('T')[0]),
+        );
+        return true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('Lỗi update anniversary: $e');
+      return false;
     }
   }
 
   void clearError() => state = state.copyWith(errorMessage: null);
+
+  // ── Private helpers ───────────────────────────────────────────────────────
+  void _connectSocket(String token, String? userId) {
+    final socket = _ref.read(socketClientProvider);
+    socket.connect(token);
+    if (userId != null && userId.isNotEmpty) {
+      Future.delayed(const Duration(milliseconds: 500), () {
+        socket.emitUserOnline(userId);
+      });
+    }
+  }
 }
 
 // ── Providers ─────────────────────────────────────────────────────────────────
-final authRepositoryProvider = Provider<AuthRepository>(
-  (_) => AuthRepository(),
-);
+final authRepositoryProvider = Provider<AuthRepository>((_) => AuthRepository());
 
-final socketClientProvider = Provider<SocketClient>((_) => SocketClient());
-
+/// ✅ authProvider nhận Ref để gắn onUnauthorized vào DioClient
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
-  return AuthNotifier(
-    ref.read(authRepositoryProvider),
-    ref.read(socketClientProvider),
-  );
+  return AuthNotifier(ref.read(authRepositoryProvider), ref);
 });

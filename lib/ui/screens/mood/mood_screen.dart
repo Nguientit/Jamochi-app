@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../data/providers/mood_provider.dart';
 import '../../../data/providers/auth_provider.dart';
+import '../settings/settings_screen.dart';
 
 class MoodScreen extends ConsumerStatefulWidget {
   const MoodScreen({super.key});
@@ -120,27 +121,57 @@ class _MoodScreenState extends ConsumerState<MoodScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          isBoy ? 'Trạm Quan Sát Tâm Trạng' : 'Dự Báo Tâm Trạng',
-        ),
+        title: Text(isBoy ? 'Trạm Quan Sát Tâm Trạng' : 'Dự Báo Tâm Trạng'),
         actions: [
-          if (moodState.isPartnerMood)
-            Container(
-              margin: const EdgeInsets.only(right: 12),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: palette.accent.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                '💕 Của Jaman',
-                style: GoogleFonts.nunito(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
-                  color: palette.accent,
+          Padding(
+            padding: const EdgeInsets.only(right: 16.0),
+            child: GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                );
+              },
+              child: Hero(
+                tag: 'user_avatar_setting',
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.08),
+                        blurRadius: 8,
+                      ),
+                    ],
+                  ),
+                  child: CircleAvatar(
+                    radius: 18,
+                    backgroundColor: Colors.pink.shade100,
+                    // 1. Nếu có link thật thì hiện ảnh
+                    backgroundImage:
+                        (user?.avatarUrl != null && user!.avatarUrl!.isNotEmpty)
+                        ? NetworkImage(user!.avatarUrl!)
+                        : null,
+                    // 2. Nếu KHÔNG có ảnh thì lấy chữ cái đầu
+                    child: (user?.avatarUrl == null || user!.avatarUrl!.isEmpty)
+                        ? Text(
+                            (user?.displayLabel.isNotEmpty == true)
+                                ? user!.displayLabel[0].toUpperCase()
+                                : 'J',
+                            style: GoogleFonts.nunito(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.pink.shade600,
+                            ),
+                          )
+                        : null,
+                  ),
                 ),
               ),
             ),
+          ),
         ],
       ),
       body: RefreshIndicator(

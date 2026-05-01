@@ -21,7 +21,7 @@ class MoodRepository {
       return res.data as Map<String, dynamic>;
     } on DioException catch (e) {
       // In log chi tiết để debug
-      print('[MoodRepo] GET mood error: ${e.response?.statusCode} — ${e.response?.data}');
+      // Lỗi fetch mood
       final msg = e.response?.data?['message'] ?? 'Không thể lấy dữ liệu tâm trạng';
       throw msg as String;
     } catch (e) {
@@ -50,7 +50,7 @@ class MoodRepository {
       );
       return res.data as Map<String, dynamic>;
     } on DioException catch (e) {
-      print('[MoodRepo] POST mood error: ${e.response?.statusCode} — ${e.response?.data}');
+      // Lỗi update mood
       final msg = e.response?.data?['message'] ?? e.message ?? 'Lỗi cập nhật mood';
       throw msg as String;
     } catch (e) {

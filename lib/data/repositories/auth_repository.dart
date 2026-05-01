@@ -72,16 +72,17 @@ class AuthRepository {
     }
   }
 
-  Future<void> updateFcmToken(String token) async {
+  Future<Map<String, dynamic>> updateAnniversary(String date) async {
     try {
-      // Nhớ sửa lại đường dẫn '/auth/fcm-token' cho khớp với cấu hình API của bạn nhé
-      await _dioClient.dio.patch('/auth/fcm-token', data: {'fcm_token': token});
-      print('✅ Đã gửi FCM Token lên Server thành công!');
-    } catch (e) {
-      print('🚨 Lỗi gửi FCM Token lên Server: $e');
+      final res = await _dioClient.dio.put(
+        ApiConstants.updateAnniversary, 
+        data: {'date': date},
+      );
+      return res.data;
+    } on DioException catch (e) {
+      throw e.response?.data['message'] ?? 'Lỗi cập nhật ngày kỷ niệm';
     }
   }
-
   // ── Lưu token ────────────────────────────────────────────────────────────────
   Future<void> saveToken(String token) => _dioClient.saveToken(token);
   Future<void> clearToken() => _dioClient.clearToken();

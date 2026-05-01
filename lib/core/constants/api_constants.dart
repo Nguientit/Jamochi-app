@@ -19,7 +19,6 @@ class ApiConstants {
   static const String me             = "/auth/me";
   static const String generateInvite = "/auth/invite/generate";
   static const String acceptInvite   = "/auth/invite/accept";
-  static const String updateFcmToken = "/auth/fcm-token";
 
   // ── Mood / Dự Báo ─────────────────────────────────────────────────────────
   // 🛡️ FIX: tách rõ GET today vs POST forecast để không nhầm lẫn
@@ -44,6 +43,7 @@ class ApiConstants {
   static const String vaultMeasure  = "/vault/measurements";
   static const String vaultPartner  = "/vault/partner";
   static const String cycleStart    = "/vault/cycle/start";
+  static const String updateAnniversary = "/vault/anniversary";
   static String cycleEnd(String id)   => "/vault/cycle/$id/end";
   static const String cycleHistory   = "/vault/cycle/history";
   static const String cyclePrediction = "/vault/cycle/prediction";

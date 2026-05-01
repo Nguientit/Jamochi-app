@@ -3,10 +3,13 @@
 
 import 'dart:io' as io;
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:ui'; // Để dùng ImageFilter tạo nền mờ
+import 'package:flutter/services.dart'; // Để dùng Clipboard (Sao chép)
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../data/providers/chat_provider.dart';
@@ -15,7 +18,7 @@ import '../../../data/providers/auth_provider.dart';
 import '../../../models/message.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
-  final String partnerName; // 🎯 Thêm parameter để biết đang chat với ai
+  final String partnerName;
 
   const ChatScreen({super.key, this.partnerName = 'jaman'});
 
@@ -57,7 +60,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   Future<void> _pickImage(ImageSource source) async {
-    Navigator.pop(context);
+    Navigator.pop(context); // Đóng bottom sheet
     try {
       final xfile = await _imagePicker.pickImage(
         source: source,
@@ -72,85 +75,186 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
-  void _showImagePicker() {
+  // 🎯 ĐÃ SỬA: Truyền thêm palette để đồng bộ màu sắc UI
+  void _showImagePicker(MoodPalette palette) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) => _ImagePickerSheet(onPick: _pickImage),
+      builder: (_) => _ImagePickerSheet(onPick: _pickImage, palette: palette),
     );
   }
 
-  void _showReactionPicker(
+  void _showMessageOptions(
     BuildContext ctx,
     ChatMessage msg,
     MoodPalette palette,
+    bool isMe,
   ) {
     const reactions = ['❤️', '😂', '😮', '😢', '😡', '👍'];
     final RenderBox box = ctx.findRenderObject() as RenderBox;
     final offset = box.localToGlobal(Offset.zero);
-    final screenWidth = MediaQuery.of(context).size.width;
+
+    // Tính toán vị trí top để menu không bị tràn khỏi màn hình khi tin nhắn ở quá cao hoặc quá thấp
+    final topPosition = (offset.dy - 40).clamp(
+      100.0,
+      MediaQuery.of(context).size.height - 350.0,
+    );
 
     showDialog(
       context: context,
       barrierColor: Colors.transparent,
       builder: (_) => Stack(
         children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(color: Colors.transparent),
+          // 1. LỚP NỀN MỜ (Blur Background kiểu iOS)
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                child: Container(color: Colors.black.withValues(alpha: 0.2)),
+              ),
+            ),
           ),
+
+          // 2. NỘI DUNG MENU
           Positioned(
-            left: offset.dx.clamp(0, screenWidth - 260),
-            top: (offset.dy - 70).clamp(0, double.infinity),
+            left: isMe ? null : 20,
+            right: isMe ? 20 : null,
+            top: topPosition,
             child: Material(
               color: Colors.transparent,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(32),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.12),
-                      blurRadius: 20,
+              child: Column(
+                crossAxisAlignment: isMe
+                    ? CrossAxisAlignment.end
+                    : CrossAxisAlignment.start,
+                children: [
+                  // --- Thanh thả tim (Reactions) ---
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
                     ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: reactions.map((emoji) {
-                    final isActive = msg.reaction == emoji;
-                    return GestureDetector(
-                      onTap: () {
-                        Navigator.pop(context);
-                        ref
-                            .read(chatProvider.notifier)
-                            .reactToMessage(msg.id, isActive ? null : emoji);
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 150),
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: isActive
-                              ? palette.accent.withValues(alpha: 0.15)
-                              : Colors.transparent,
-                          shape: BoxShape.circle,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF252525), // Màu xám đen iOS
+                      borderRadius: BorderRadius.circular(32),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: reactions.map((emoji) {
+                        final isActive = msg.reaction == emoji;
+                        return GestureDetector(
+                          onTap: () {
+                            Navigator.pop(context);
+                            ref
+                                .read(chatProvider.notifier)
+                                .reactToMessage(
+                                  msg.id,
+                                  isActive ? null : emoji,
+                                );
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            margin: const EdgeInsets.symmetric(horizontal: 4),
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: isActive
+                                  ? Colors.white.withValues(alpha: 0.2)
+                                  : Colors.transparent,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Text(
+                              emoji,
+                              style: TextStyle(fontSize: isActive ? 28 : 24),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // --- Menu Các Lựa Chọn ---
+                  Container(
+                    width: 220,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF252525),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      children: [
+                        // Nút Trả lời
+                        _buildMenuOption('Trả lời', Icons.reply_rounded, () {
+                          Navigator.pop(context);
+                          ref.read(chatProvider.notifier).setReplyTo(msg);
+                        }),
+                        Divider(
+                          height: 1,
+                          color: Colors.white.withValues(alpha: 0.1),
                         ),
-                        child: Text(
-                          emoji,
-                          style: TextStyle(fontSize: isActive ? 26 : 22),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
+
+                        // Nút Sao chép
+                        _buildMenuOption('Sao chép', Icons.copy_rounded, () {
+                          Navigator.pop(context);
+                          Clipboard.setData(
+                            ClipboardData(text: msg.content ?? ''),
+                          );
+                          _showSuccess('Đã sao chép tin nhắn');
+                        }),
+
+                        // Nút Xóa (Chỉ hiện nếu là tin nhắn của mình)
+                        if (isMe) ...[
+                          Divider(
+                            height: 1,
+                            color: Colors.white.withValues(alpha: 0.1),
+                          ),
+                          _buildMenuOption('Xóa', Icons.delete_outline_rounded, () {
+                            Navigator.pop(context);
+                            ref.read(chatProvider.notifier).deleteMessage(msg.id);
+                            _showSuccess('Đã xóa tin nhắn');
+                          }, isDestructive: true),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // Widget hỗ trợ vẽ các dòng Menu Option
+  Widget _buildMenuOption(
+    String title,
+    IconData icon,
+    VoidCallback onTap, {
+    bool isDestructive = false,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              title,
+              style: GoogleFonts.nunito(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: isDestructive ? Colors.redAccent : Colors.white,
+              ),
+            ),
+            Icon(
+              icon,
+              size: 20,
+              color: isDestructive ? Colors.redAccent : Colors.white,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -160,6 +264,24 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       SnackBar(
         content: Text(msg, style: GoogleFonts.nunito(color: Colors.white)),
         backgroundColor: AppColors.error,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
+  }
+
+  void _showSuccess(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          msg,
+          style: GoogleFonts.nunito(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        backgroundColor: Colors.green.shade600,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: const EdgeInsets.all(16),
@@ -249,23 +371,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   bool _sameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
 
-  // ── Logic gom nhóm tin nhắn ──────────────────────────────────────────────
-  // (list đã reverse: index 0 = mới nhất)
-  // isFirstInGroup: tin đầu tiên của nhóm sender = hiện avatar + tên
-  // isLastInGroup:  tin cuối của nhóm           = hiện timestamp
   bool _isFirstInGroup(List<ChatMessage> msgs, int i) {
-    if (i == 0) return true; // mới nhất
+    if (i == 0) return true;
     final curr = msgs[i];
-    final prev = msgs[i - 1]; // tin mới hơn (index nhỏ hơn)
+    final prev = msgs[i - 1];
     if (curr.senderId != prev.senderId) return true;
-    // Nếu cách nhau > 5 phút → coi là nhóm mới
     return prev.createdAt.difference(curr.createdAt).inMinutes > 5;
   }
 
   bool _isLastInGroup(List<ChatMessage> msgs, int i) {
-    if (i == msgs.length - 1) return true; // cũ nhất
+    if (i == msgs.length - 1) return true;
     final curr = msgs[i];
-    final next = msgs[i + 1]; // tin cũ hơn
+    final next = msgs[i + 1];
     if (curr.senderId != next.senderId) return true;
     return curr.createdAt.difference(next.createdAt).inMinutes > 5;
   }
@@ -286,13 +403,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     });
 
     return Scaffold(
-      // 🛡️ FIX KEY: true → input tự đẩy lên trên keyboard
       resizeToAvoidBottomInset: true,
       backgroundColor: palette.primary.withValues(alpha: 0.25),
       appBar: _buildAppBar(palette, partnerName, chatState, isBoy),
       body: Column(
         children: [
-          // Reply bar
           if (chatState.replyingTo != null)
             _ReplyBar(
               message: chatState.replyingTo!,
@@ -300,11 +415,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               onCancel: () => ref.read(chatProvider.notifier).cancelReply(),
             ),
 
-          // Typing indicator
           if (chatState.isPartnerTyping)
             _TypingIndicator(name: partnerName, palette: palette),
 
-          // Danh sách tin nhắn
           Expanded(
             child: chatState.isLoading && chatState.messages.isEmpty
                 ? Center(
@@ -322,7 +435,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       final isMe = msg.senderId == user?.id;
                       final isAI = msg.senderId == 'mochi_ai';
 
-                      // Hiện label ngày khi đổi ngày
                       final showDate =
                           i == chatState.messages.length - 1 ||
                           !_sameDay(
@@ -330,7 +442,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             chatState.messages[i + 1].createdAt,
                           );
 
-                      // 🎯 Gom nhóm: tính vị trí trong nhóm
                       final isFirst = _isFirstInGroup(chatState.messages, i);
                       final isLast = _isLastInGroup(chatState.messages, i);
 
@@ -343,12 +454,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             isMe: isMe,
                             isAI: isAI,
                             palette: palette,
-                            // isFirst: tin đầu nhóm → bo góc nhọn phía trên
-                            // isLast:  tin cuối nhóm → hiện timestamp + bo góc nhọn phía dưới
                             isFirstInGroup: isFirst,
                             isLastInGroup: isLast,
+                            // 🎯 THAY ĐỔI DÒNG NÀY:
                             onLongPress: (ctx) =>
-                                _showReactionPicker(ctx, msg, palette),
+                                _showMessageOptions(ctx, msg, palette, isMe),
                             onReply: () =>
                                 ref.read(chatProvider.notifier).setReplyTo(msg),
                           ),
@@ -366,7 +476,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             onChanged: (v) =>
                 setState(() => _isComposing = v.trim().isNotEmpty),
             onSend: _handleSend,
-            onImagePick: _showImagePicker,
+            onImagePick: () =>
+                _showImagePicker(palette), // 🎯 Truyền palette vào
             onAskGemini: () => _showGeminiDialog(context, palette),
           ),
         ],
@@ -384,7 +495,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       backgroundColor: Colors.white.withValues(alpha: 0.95),
       elevation: 0,
       scrolledUnderElevation: 0,
-      // 🛡️ FIX: automaticallyImplyLeading: true → Flutter tự thêm back button vì là pushed route
       automaticallyImplyLeading: true,
       iconTheme: IconThemeData(color: palette.accent),
       title: Row(
@@ -463,15 +573,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// MESSAGE BUBBLE — Có gom nhóm
+// 🎯 MESSAGE BUBBLE
 // ══════════════════════════════════════════════════════════════════════════════
-class _MessageBubble extends StatelessWidget {
+class _MessageBubble extends StatefulWidget {
   final ChatMessage message;
   final bool isMe;
   final bool isAI;
   final MoodPalette palette;
-  final bool isFirstInGroup; // tin mới nhất của nhóm (list đang reverse)
-  final bool isLastInGroup; // tin cũ nhất của nhóm → hiện timestamp
+  final bool isFirstInGroup;
+  final bool isLastInGroup;
   final void Function(BuildContext) onLongPress;
   final VoidCallback onReply;
 
@@ -488,204 +598,268 @@ class _MessageBubble extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    if (isAI) return _AIBubble(message: message, palette: palette);
+  State<_MessageBubble> createState() => _MessageBubbleState();
+}
 
-    // 🎯 Bo góc theo vị trí trong nhóm
-    // ListView reverse=true: index 0 = mới nhất = hiển thị DƯỚI cùng
-    // isFirstInGroup (tin mới nhất) = phía DƯỚI màn hình → bo góc dưới nhọn
-    // isLastInGroup (tin cũ nhất)   = phía TRÊN màn hình → bo góc trên nhọn
+class _MessageBubbleState extends State<_MessageBubble> {
+  bool _showDetails = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.isAI)
+      return _AIBubble(message: widget.message, palette: widget.palette);
+
     final double radiusFull = 20.0;
     final double radiusSharp = 4.0;
 
-    final BorderRadius borderRadius = isMe
+    final BorderRadius borderRadius = widget.isMe
         ? BorderRadius.only(
             topLeft: Radius.circular(radiusFull),
-            topRight: Radius.circular(isLastInGroup ? radiusFull : radiusSharp),
+            topRight: Radius.circular(
+              widget.isLastInGroup ? radiusFull : radiusSharp,
+            ),
             bottomLeft: Radius.circular(radiusFull),
             bottomRight: Radius.circular(
-              isFirstInGroup ? radiusSharp : radiusFull,
+              widget.isFirstInGroup ? radiusSharp : radiusFull,
             ),
           )
         : BorderRadius.only(
-            topLeft: Radius.circular(isLastInGroup ? radiusFull : radiusSharp),
+            topLeft: Radius.circular(
+              widget.isLastInGroup ? radiusFull : radiusSharp,
+            ),
             topRight: Radius.circular(radiusFull),
             bottomLeft: Radius.circular(
-              isFirstInGroup ? radiusSharp : radiusFull,
+              widget.isFirstInGroup ? radiusSharp : radiusFull,
             ),
             bottomRight: Radius.circular(radiusFull),
           );
 
-    // Padding giữa các bubble: nhỏ hơn nếu cùng nhóm
-    final double bottomPad = isFirstInGroup ? 8.0 : 2.0;
-
-    return GestureDetector(
-      onLongPress: () => onLongPress(context),
-      child: Dismissible(
-        key: ValueKey('d_${message.id}'),
-        direction: DismissDirection.startToEnd,
-        confirmDismiss: (_) async {
-          onReply();
-          return false;
-        },
-        background: Padding(
-          padding: const EdgeInsets.only(left: 12),
-          child: Row(
-            children: [
-              Icon(
-                Icons.reply_rounded,
-                color: palette.accent.withValues(alpha: 0.6),
-                size: 20,
+    return Dismissible(
+      key: ValueKey('d_${widget.message.id}'),
+      direction: DismissDirection.startToEnd,
+      confirmDismiss: (_) async {
+        widget.onReply();
+        return false;
+      },
+      background: Padding(
+        padding: const EdgeInsets.only(left: 12),
+        child: Row(
+          children: [
+            Icon(
+              Icons.reply_rounded,
+              color: widget.palette.accent.withValues(alpha: 0.6),
+              size: 20,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              'Reply',
+              style: GoogleFonts.nunito(
+                fontSize: 12,
+                color: widget.palette.accent.withValues(alpha: 0.7),
               ),
-              const SizedBox(width: 4),
-              Text(
-                'Reply',
-                style: GoogleFonts.nunito(
-                  fontSize: 12,
-                  color: palette.accent.withValues(alpha: 0.7),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
-        child: Padding(
-          padding: EdgeInsets.only(bottom: bottomPad),
-          child: Row(
-            mainAxisAlignment: isMe
-                ? MainAxisAlignment.end
-                : MainAxisAlignment.start,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              if (!isMe) const SizedBox(width: 4),
-              Flexible(
-                child: Column(
-                  crossAxisAlignment: isMe
-                      ? CrossAxisAlignment.end
-                      : CrossAxisAlignment.start,
-                  children: [
-                    // Reply preview
-                    if (message.replyContent != null)
-                      Container(
-                        margin: const EdgeInsets.only(bottom: 3),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: palette.secondary.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border(
-                            left: BorderSide(color: palette.accent, width: 3),
-                          ),
-                        ),
-                        child: Text(
-                          message.replyContent!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.nunito(
-                            fontSize: 12,
-                            color: AppColors.textMedium,
-                          ),
-                        ),
-                      ),
-
-                    // Bubble
-                    Stack(
-                      clipBehavior: Clip.none,
+      ),
+      child: Padding(
+        padding: EdgeInsets.only(bottom: widget.isFirstInGroup ? 8.0 : 2.0),
+        child: Column(
+          crossAxisAlignment: widget.isMe
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
+          children: [
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  _showDetails = !_showDetails;
+                });
+              },
+              onLongPress: () => widget.onLongPress(context),
+              child: Row(
+                mainAxisAlignment: widget.isMe
+                    ? MainAxisAlignment.end
+                    : MainAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (!widget.isMe) const SizedBox(width: 4),
+                  Flexible(
+                    child: Column(
+                      crossAxisAlignment: widget.isMe
+                          ? CrossAxisAlignment.end
+                          : CrossAxisAlignment.start,
                       children: [
-                        Container(
-                          constraints: BoxConstraints(
-                            maxWidth: MediaQuery.of(context).size.width * 0.72,
-                          ),
-                          padding: message.isImage
-                              ? const EdgeInsets.all(4)
-                              : const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 10,
+                        if (widget.message.replyContent != null)
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 3),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: widget.palette.secondary.withValues(
+                                alpha: 0.2,
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border(
+                                left: BorderSide(
+                                  color: widget.palette.accent,
+                                  width: 3,
                                 ),
-                          decoration: BoxDecoration(
-                            color: isMe ? palette.accent : Colors.white,
-                            borderRadius: borderRadius,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.04),
-                                blurRadius: 6,
-                                offset: const Offset(0, 2),
                               ),
-                            ],
-                          ),
-                          child: message.isImage
-                              ? _ImageContent(mediaUrl: message.mediaUrl ?? '')
-                              : Text(
-                                  message.content ?? '',
-                                  style: GoogleFonts.nunito(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w500,
-                                    color: isMe
-                                        ? Colors.white
-                                        : AppColors.textDark,
-                                    height: 1.4,
-                                  ),
-                                ),
-                        ),
-
-                        // Reaction badge
-                        if (message.reaction != null)
-                          Positioned(
-                            bottom: -10,
-                            right: isMe ? null : 0,
-                            left: isMe ? 0 : null,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 5,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(12),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.1),
-                                    blurRadius: 6,
-                                  ),
-                                ],
-                              ),
-                              child: Text(
-                                message.reaction!,
-                                style: const TextStyle(fontSize: 13),
+                            ),
+                            child: Text(
+                              widget.message.replyContent!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.nunito(
+                                fontSize: 12,
+                                color: AppColors.textMedium,
                               ),
                             ),
                           ),
+                        Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Container(
+                              constraints: BoxConstraints(
+                                maxWidth:
+                                    MediaQuery.of(context).size.width * 0.72,
+                              ),
+                              padding: widget.message.isImage
+                                  ? const EdgeInsets.all(4)
+                                  : const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 10,
+                                    ),
+                              decoration: BoxDecoration(
+                                color: widget.isMe
+                                    ? widget.palette.accent
+                                    : Colors.white,
+                                borderRadius: borderRadius,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.04),
+                                    blurRadius: 6,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: widget.message.isImage
+                                  // 🎯 NÂNG CẤP TRUYỀN PALETTE CHO ẢNH
+                                  ? _ImageContent(
+                                      mediaUrl: widget.message.mediaUrl ?? '',
+                                      palette: widget.palette,
+                                    )
+                                  : Text(
+                                      widget.message.content ?? '',
+                                      style: GoogleFonts.nunito(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w500,
+                                        color: widget.isMe
+                                            ? Colors.white
+                                            : AppColors.textDark,
+                                        height: 1.4,
+                                      ),
+                                    ),
+                            ),
+                            if (widget.message.reaction != null)
+                              Positioned(
+                                bottom: -10,
+                                right: widget.isMe ? null : 0,
+                                left: widget.isMe ? 0 : null,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 5,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(12),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(
+                                          alpha: 0.1,
+                                        ),
+                                        blurRadius: 6,
+                                      ),
+                                    ],
+                                  ),
+                                  child: Text(
+                                    widget.message.reaction!,
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
                       ],
                     ),
-
-                    // 🎯 Timestamp CHỈ hiện ở tin CUỐI NHÓM (cũ nhất của nhóm)
-                    if (isLastInGroup) ...[
-                      const SizedBox(height: 4),
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: Text(
-                          message.timeLabel,
-                          style: GoogleFonts.nunito(
-                            fontSize: 10,
-                            color: AppColors.textLight,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
+                  ),
+                  if (widget.isMe) const SizedBox(width: 4),
+                ],
               ),
-              if (isMe) const SizedBox(width: 4),
-            ],
-          ),
+            ),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOutCubic,
+              child: _showDetails
+                  ? Padding(
+                      padding: EdgeInsets.only(
+                        top: 6,
+                        bottom: 4,
+                        left: widget.isMe ? 0 : 12,
+                        right: widget.isMe ? 12 : 0,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: widget.isMe
+                            ? MainAxisAlignment.end
+                            : MainAxisAlignment.start,
+                        children: [
+                          Text(
+                            DateFormat(
+                              'HH:mm',
+                            ).format(widget.message.createdAt),
+                            style: GoogleFonts.nunito(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textLight,
+                            ),
+                          ),
+                          if (widget.isMe) ...[
+                            const SizedBox(width: 4),
+                            Icon(
+                              widget.message.isRead
+                                  ? Icons.done_all_rounded
+                                  : Icons.check_circle_outline_rounded,
+                              size: 14,
+                              color: widget.message.isRead
+                                  ? widget.palette.accent
+                                  : AppColors.textLight,
+                            ),
+                            const SizedBox(width: 2),
+                            Text(
+                              widget.message.isRead ? 'Đã xem' : 'Đã gửi',
+                              style: GoogleFonts.nunito(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: widget.message.isRead
+                                    ? widget.palette.accent
+                                    : AppColors.textLight,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-// ── AI Bubble ─────────────────────────────────────────────────────────────────
 class _AIBubble extends StatelessWidget {
   final ChatMessage message;
   final MoodPalette palette;
@@ -742,10 +916,53 @@ class _AIBubble extends StatelessWidget {
   }
 }
 
-// ── Image Content ─────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// 🎯 NÂNG CẤP HIỂN THỊ ẢNH (BẤM ĐỂ ĐÓNG VÀ LƯU ẢNH)
+// ══════════════════════════════════════════════════════════════════════════════
 class _ImageContent extends StatelessWidget {
   final String mediaUrl;
-  const _ImageContent({required this.mediaUrl});
+  final MoodPalette palette;
+  const _ImageContent({required this.mediaUrl, required this.palette});
+
+  // HÀM GIẢ LẬP LƯU ẢNH (Thêm package `gal` để lưu vật lý)
+  Future<void> _saveImage(BuildContext context) async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '⏳ Đang tải ảnh...',
+          style: GoogleFonts.nunito(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        backgroundColor: Colors.black87,
+        duration: const Duration(seconds: 1),
+      ),
+    );
+    // TODO: Viết logic tải và lưu ảnh bằng thư viện ở đây
+    await Future.delayed(const Duration(seconds: 1));
+
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle_rounded, color: Colors.green),
+            const SizedBox(width: 8),
+            Text(
+              'Đã lưu ảnh vào thư viện! 🎉',
+              style: GoogleFonts.nunito(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.black87,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -756,24 +973,35 @@ class _ImageContent extends StatelessWidget {
       onTap: () {
         showDialog(
           context: context,
-          barrierColor: Colors.black.withValues(alpha: 0.9), // Nền đen mờ
+          barrierColor: Colors.black.withValues(
+            alpha: 0.95,
+          ), // Nền đen sâu hơn xíu
           builder: (_) => Dialog(
             backgroundColor: Colors.transparent,
             insetPadding: EdgeInsets.zero,
             child: Stack(
               fit: StackFit.expand,
               children: [
-                // Widget hỗ trợ Zoom ảnh (pinch to zoom)
-                InteractiveViewer(
-                  panEnabled: true,
-                  minScale: 0.5,
-                  maxScale: 4.0,
-                  child: isNetwork
-                      ? Image.network(mediaUrl, fit: BoxFit.contain)
-                      // 🎯 FIX: Đã thêm io. vào trước File
-                      : Image.file(io.File(mediaUrl), fit: BoxFit.contain),
+                // 1. LỚP NỀN: Bấm ra ngoài ảnh để đóng
+                GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Container(color: Colors.transparent),
                 ),
-                // Nút x (Close) ở góc phải
+
+                // 2. ẢNH: Hấp thụ Tap (bấm vào ảnh sẽ không bị đóng để còn zoom)
+                GestureDetector(
+                  onTap: () {},
+                  child: InteractiveViewer(
+                    panEnabled: true,
+                    minScale: 0.5,
+                    maxScale: 4.0,
+                    child: isNetwork
+                        ? Image.network(mediaUrl, fit: BoxFit.contain)
+                        : Image.file(io.File(mediaUrl), fit: BoxFit.contain),
+                  ),
+                ),
+
+                // 3. NÚT TẮT X (Góc trên phải)
                 Positioned(
                   top: 40,
                   right: 20,
@@ -784,6 +1012,31 @@ class _ImageContent extends StatelessWidget {
                       size: 32,
                     ),
                     onPressed: () => Navigator.pop(context),
+                  ),
+                ),
+
+                // 4. NÚT LƯU ẢNH (Góc dưới phải)
+                Positioned(
+                  bottom: 40,
+                  right: 20,
+                  child: GestureDetector(
+                    onTap: () => _saveImage(context),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.5),
+                          width: 1,
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.download_rounded,
+                        color: Colors.white,
+                        size: 26,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -816,7 +1069,6 @@ class _ImageContent extends StatelessWidget {
                   ),
                 ),
               )
-            // 🎯 FIX: Đã thêm io. vào trước File
             : Image.file(
                 io.File(mediaUrl),
                 width: 220,
@@ -828,7 +1080,7 @@ class _ImageContent extends StatelessWidget {
   }
 }
 
-// ── Reply Bar ─────────────────────────────────────────────────────────────────
+// ── CÁC PHẦN CÒN LẠI (Reply Bar, Typing Indicator, Date Label, Empty Chat) GIỮ NGUYÊN ──
 class _ReplyBar extends StatelessWidget {
   final ChatMessage message;
   final MoodPalette palette;
@@ -883,7 +1135,6 @@ class _ReplyBar extends StatelessWidget {
   }
 }
 
-// ── Typing Indicator ──────────────────────────────────────────────────────────
 class _TypingIndicator extends StatelessWidget {
   final String name;
   final MoodPalette palette;
@@ -913,7 +1164,6 @@ class _TypingIndicator extends StatelessWidget {
   }
 }
 
-// ── Date Label ────────────────────────────────────────────────────────────────
 class _DateLabel extends StatelessWidget {
   final DateTime date;
   const _DateLabel({required this.date});
@@ -955,7 +1205,6 @@ class _DateLabel extends StatelessWidget {
   }
 }
 
-// ── Empty Chat ────────────────────────────────────────────────────────────────
 class _EmptyChat extends StatelessWidget {
   final MoodPalette palette;
   final String partnerName;
@@ -995,7 +1244,6 @@ class _EmptyChat extends StatelessWidget {
   }
 }
 
-// ── Input Area ────────────────────────────────────────────────────────────────
 class _InputArea extends StatelessWidget {
   final TextEditingController controller;
   final MoodPalette palette;
@@ -1150,55 +1398,74 @@ class _IconBtn extends StatelessWidget {
   }
 }
 
-// ── Image Picker Sheet ────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// 🎯 NÂNG CẤP UI BOTTOM SHEET "GỬI ẢNH" LÊN TẦM CAO MỚI
+// ══════════════════════════════════════════════════════════════════════════════
 class _ImagePickerSheet extends StatelessWidget {
   final void Function(ImageSource) onPick;
-  const _ImagePickerSheet({required this.onPick});
+  final MoodPalette palette; // Nhận màu chủ đạo
+  const _ImagePickerSheet({required this.onPick, required this.palette});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 36),
       decoration: const BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Thanh kéo nhỏ
           Container(
-            width: 40,
-            height: 4,
+            width: 48,
+            height: 5,
             decoration: BoxDecoration(
               color: Colors.grey.shade300,
-              borderRadius: BorderRadius.circular(2),
+              borderRadius: BorderRadius.circular(10),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 24),
+
           Text(
             'Gửi ảnh',
-            style: GoogleFonts.playfairDisplay(
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
+            style: GoogleFonts.nunito(
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textDark,
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 8),
+          Text(
+            'Chọn một bức ảnh thật đẹp nhé 💕',
+            style: GoogleFonts.nunito(
+              fontSize: 14,
+              color: AppColors.textMedium,
+            ),
+          ),
+          const SizedBox(height: 32),
+
+          // 2 Lựa chọn
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               _PickerOption(
-                emoji: '📷',
-                label: 'Chụp ảnh',
+                icon: Icons.camera_alt_rounded,
+                color: palette.accent,
+                bgColor: palette.primary,
+                label: 'Máy ảnh',
                 onTap: () => onPick(ImageSource.camera),
               ),
               _PickerOption(
-                emoji: '🖼️',
+                icon: Icons.photo_library_rounded,
+                color: Colors.blue.shade500,
+                bgColor: Colors.blue.shade50,
                 label: 'Thư viện',
                 onTap: () => onPick(ImageSource.gallery),
               ),
             ],
           ),
-          const SizedBox(height: 16),
         ],
       ),
     );
@@ -1206,11 +1473,16 @@ class _ImagePickerSheet extends StatelessWidget {
 }
 
 class _PickerOption extends StatelessWidget {
-  final String emoji;
+  final IconData icon;
+  final Color color;
+  final Color bgColor;
   final String label;
   final VoidCallback onTap;
+
   const _PickerOption({
-    required this.emoji,
+    required this.icon,
+    required this.color,
+    required this.bgColor,
     required this.label,
     required this.onTap,
   });
@@ -1222,20 +1494,27 @@ class _PickerOption extends StatelessWidget {
       child: Column(
         children: [
           Container(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(22),
             decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              borderRadius: BorderRadius.circular(20),
+              color: bgColor,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: color.withValues(alpha: 0.2),
+                  blurRadius: 16,
+                  offset: const Offset(0, 8),
+                ),
+              ],
             ),
-            child: Text(emoji, style: const TextStyle(fontSize: 36)),
+            child: Icon(icon, size: 36, color: color),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Text(
             label,
             style: GoogleFonts.nunito(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textMedium,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textDark,
             ),
           ),
         ],

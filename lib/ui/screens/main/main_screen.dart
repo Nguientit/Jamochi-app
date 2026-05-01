@@ -10,7 +10,7 @@ import '../mood/mood_screen.dart';
 import '../achievement/achievement_screen.dart';
 import '../chat/chat_list_screen.dart';
 import '../vault/vault_screen.dart';
-import '../settings/settings_screen.dart';
+import '../main/memories_screen.dart';
 import '../../../data/providers/mood_provider.dart';
 import '../../../data/providers/chat_provider.dart';
 
@@ -30,7 +30,7 @@ class _MainScreenState extends ConsumerState<MainScreen> {
     AchievementScreen(),
     ChatListScreen(),
     VaultScreen(),
-    SettingsScreen(),
+    MemoriesScreen(),
   ];
 
   void _onTap(int index) {
@@ -114,8 +114,8 @@ class _MainScreenState extends ConsumerState<MainScreen> {
                 onTap: _onTap,
               ),
               _NavItem(
-                icon: Icons.settings_rounded,
-                label: 'Setting',
+                icon: Icons.calendar_month_rounded,
+                label: 'Kỷ niệm',
                 navIndex: 4,
                 currentIndex: _currentIndex,
                 palette: palette,
