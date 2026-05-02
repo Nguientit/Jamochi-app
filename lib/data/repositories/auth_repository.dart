@@ -83,6 +83,19 @@ class AuthRepository {
       throw e.response?.data['message'] ?? 'Lỗi cập nhật ngày kỷ niệm';
     }
   }
+
+  Future<Map<String, dynamic>> updateNickname(String newNickname) async {
+    try {
+      final res = await _dioClient.dio.put(
+        ApiConstants.updateNickname,
+        data: {'nickname': newNickname},
+      );
+      return res.data;
+    } on DioException catch (e) {
+      throw e.response?.data['message'] ?? 'Lỗi cập nhật biệt danh';
+    }
+  }
+
   // ── Lưu token ────────────────────────────────────────────────────────────────
   Future<void> saveToken(String token) => _dioClient.saveToken(token);
   Future<void> clearToken() => _dioClient.clearToken();

@@ -96,11 +96,18 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
       _connectSocket(token, data['user']?['id']?.toString());
     } catch (e) {
-      state = state.copyWith(status: AuthStatus.error, errorMessage: e.toString());
+      state = state.copyWith(
+        status: AuthStatus.error,
+        errorMessage: e.toString(),
+      );
     }
   }
 
-  Future<void> register(String email, String password, String displayName) async {
+  Future<void> register(
+    String email,
+    String password,
+    String displayName,
+  ) async {
     state = state.copyWith(status: AuthStatus.loading);
     try {
       final res = await _repo.register(email, password, displayName);
@@ -116,7 +123,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
       _connectSocket(token, data['user']?['id']?.toString());
     } catch (e) {
-      state = state.copyWith(status: AuthStatus.error, errorMessage: e.toString());
+      state = state.copyWith(
+        status: AuthStatus.error,
+        errorMessage: e.toString(),
+      );
     }
   }
 
@@ -139,7 +149,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
         couple: data['couple'] != null ? Couple.fromJson(data['couple']) : null,
       );
     } catch (e) {
-      state = state.copyWith(status: AuthStatus.error, errorMessage: e.toString());
+      state = state.copyWith(
+        status: AuthStatus.error,
+        errorMessage: e.toString(),
+      );
     }
   }
 
@@ -165,10 +178,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   Future<bool> updateAnniversaryDate(DateTime newDate) async {
     try {
-      final res = await _repo.updateAnniversary(newDate.toIso8601String().split('T')[0]);
+      final res = await _repo.updateAnniversary(
+        newDate.toIso8601String().split('T')[0],
+      );
       if (res['success'] == true && state.couple != null) {
         state = state.copyWith(
-          couple: state.couple!.copyWith(anniversaryDate: newDate.toIso8601String().split('T')[0]),
+          couple: state.couple!.copyWith(
+            anniversaryDate: newDate.toIso8601String().split('T')[0],
+          ),
         );
         return true;
       }
@@ -176,6 +193,26 @@ class AuthNotifier extends StateNotifier<AuthState> {
     } catch (e) {
       debugPrint('Lỗi update anniversary: $e');
       return false;
+    }
+  }
+
+  // ── Cập nhật Biệt danh ──────────────────────────────────────────────────────
+  Future<void> updateNickname(String newNickname) async {
+    final currentUser = state.user;
+    if (currentUser == null) return;
+
+    try {
+      final res = await _repo.updateNickname(newNickname);
+      
+      if (res['success'] == true) {
+        final updatedUser = currentUser.copyWith(nickname: newNickname);
+        
+        state = state.copyWith(user: updatedUser);
+      } else {
+        throw Exception(res['message'] ?? 'Lỗi không xác định từ server');
+      }
+    } catch (e) {
+      throw Exception('Lỗi cập nhật biệt danh: $e');
     }
   }
 
@@ -194,7 +231,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
 }
 
 // ── Providers ─────────────────────────────────────────────────────────────────
-final authRepositoryProvider = Provider<AuthRepository>((_) => AuthRepository());
+final authRepositoryProvider = Provider<AuthRepository>(
+  (_) => AuthRepository(),
+);
 
 /// ✅ authProvider nhận Ref để gắn onUnauthorized vào DioClient
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {

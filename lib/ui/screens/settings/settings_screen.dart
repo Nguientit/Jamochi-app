@@ -6,6 +6,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../data/providers/auth_provider.dart';
 import '../profile/anniversary_list_screen.dart';
 import '../auth/login_screen.dart';
+import '../profile/edit_nickname_sheet.dart'; // 🎯 Import Bảng đổi tên
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -34,7 +35,6 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ),
           actions: [
-            // Nút Hủy
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(),
               child: Text(
@@ -45,8 +45,6 @@ class SettingsScreen extends ConsumerWidget {
                 ),
               ),
             ),
-
-            // Nút Đăng xuất
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red.shade400,
@@ -56,20 +54,14 @@ class SettingsScreen extends ConsumerWidget {
                 ),
               ),
               onPressed: () async {
-                // 1. Đóng modal xác nhận
                 Navigator.of(dialogContext).pop();
-
-                // 2. Gọi hàm logout từ authProvider
                 await ref.read(authProvider.notifier).logout();
-
-                // 3. Chuyển hướng về trang Login và xóa sạch stack màn hình cũ
                 if (context.mounted) {
                   Navigator.of(context).pushAndRemoveUntil(
                     MaterialPageRoute(
                       builder: (context) => const LoginScreen(),
                     ),
-                    (Route<dynamic> route) =>
-                        false, // false = xóa toàn bộ lịch sử
+                    (Route<dynamic> route) => false,
                   );
                 }
               },
@@ -93,10 +85,13 @@ class SettingsScreen extends ConsumerWidget {
     final user = ref.watch(authProvider).user;
     final couple = ref.watch(authProvider).couple;
 
+    // 🎯 Lấy tên hiển thị: Ưu tiên Nickname, nếu không có thì lấy Tên thật
+    final displayName = (user?.nickname != null && user!.nickname!.isNotEmpty) 
+        ? user.nickname 
+        : (user?.displayLabel ?? 'Jaman');
+
     return Scaffold(
-      backgroundColor: const Color(
-        0xFFF8F9FA,
-      ), // Màu nền xám/trắng siêu nhạt (Light Mode)
+      backgroundColor: const Color(0xFFF8F9FA), 
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -110,10 +105,7 @@ class SettingsScreen extends ConsumerWidget {
           ),
         ),
         leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: AppColors.textDark,
-          ),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: AppColors.textDark),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -143,16 +135,13 @@ class SettingsScreen extends ConsumerWidget {
                   child: CircleAvatar(
                     radius: 50,
                     backgroundColor: Colors.pink.shade100,
-                    // Nếu có link thật thì dùng ảnh
-                    backgroundImage:
-                        (user?.avatarUrl != null && user!.avatarUrl!.isNotEmpty)
+                    backgroundImage: (user?.avatarUrl != null && user!.avatarUrl!.isNotEmpty)
                         ? NetworkImage(user.avatarUrl!)
                         : null,
-                    // Nếu KHÔNG có ảnh thì lấy chữ cái đầu của Tên
                     child: (user?.avatarUrl == null || user!.avatarUrl!.isEmpty)
                         ? Text(
-                            (user?.displayLabel.isNotEmpty == true)
-                                ? user!.displayLabel[0].toUpperCase()
+                            (displayName!.isNotEmpty == true)
+                                ? displayName[0].toUpperCase()
                                 : 'J',
                             style: GoogleFonts.playfairDisplay(
                               fontSize: 40,
@@ -166,8 +155,10 @@ class SettingsScreen extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 16),
+            
+            // 🎯 Đã cập nhật hiển thị Nickname
             Text(
-              user?.displayLabel ?? 'Jaman',
+              displayName ?? 'Jaman',
               style: GoogleFonts.playfairDisplay(
                 fontSize: 24,
                 fontWeight: FontWeight.w800,
@@ -183,7 +174,6 @@ class SettingsScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 32),
 
-            // 🎯 NHÓM 1: TÀI KHOẢN & NGƯỜI ẤY
             _buildSection(
               title: 'Cặp đôi của tôi',
               children: [
@@ -194,10 +184,44 @@ class SettingsScreen extends ConsumerWidget {
                   subtitle: couple != null ? 'Đã kết nối' : 'Chưa kết nối',
                 ),
                 _buildDivider(),
+                
+                // 🎯 ĐÃ CẬP NHẬT: GỌI BOTTOM SHEET ĐỔI BIỆT DANH
                 _buildTile(
                   icon: Icons.edit_rounded,
                   iconColor: Colors.orange.shade400,
                   title: 'Đổi Biệt danh',
+                  onTap: () {
+                    EditNicknameSheet.show(
+                      context,
+                      currentName: user?.nickname ?? '', // Lấy tên cũ nếu có
+                      target: 'mình', // Đổi tên cho bản thân
+                      onSave: (newName) async {
+                        try {
+                          // TODO: Bạn cần viết hàm updateNickname trong AuthNotifier để lưu xuống supabase/api
+                          // await ref.read(authProvider.notifier).updateNickname(newName);
+                          
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Đã đổi biệt danh thành $newName 🥰', style: GoogleFonts.nunito(color: Colors.white, fontWeight: FontWeight.bold)),
+                              backgroundColor: Colors.pink.shade400,
+                              behavior: SnackBarBehavior.floating,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                          );
+                        } catch (e) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Lỗi: Không thể đổi tên', style: GoogleFonts.nunito(color: Colors.white)),
+                              backgroundColor: Colors.red.shade400,
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
+                      },
+                    );
+                  },
                 ),
                 _buildDivider(),
                 _buildTile(
@@ -205,7 +229,6 @@ class SettingsScreen extends ConsumerWidget {
                   iconColor: Colors.pink.shade400,
                   title: 'Ngày kỷ niệm',
                   onTap: () {
-                    // 🎯 Nhấn vào sẽ bay sang màn hình Ngày Kỷ Niệm
                     Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -218,7 +241,6 @@ class SettingsScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 24),
 
-            // 🎯 NHÓM 2: GIAO DIỆN & TRẢI NGHIỆM (Tính năng App)
             _buildSection(
               title: 'Trải nghiệm Jamochi',
               children: [
@@ -245,7 +267,6 @@ class SettingsScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 24),
 
-            // 🎯 NHÓM 3: KHÁC
             _buildSection(
               title: 'Hệ thống',
               children: [
@@ -270,7 +291,6 @@ class SettingsScreen extends ConsumerWidget {
 
             const SizedBox(height: 40),
 
-            // Version App
             Center(
               child: Text(
                 'Jamochi v1.0.0\nMade with ❤️ for Jaman',
@@ -289,7 +309,7 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  // Khung tiêu đề
+  // ... (Giữ nguyên các hàm _buildSectionTitle, _buildSection, _buildTile, _buildDivider, _buildSwitch như file cũ của bạn) ...
   Widget _buildSectionTitle(String title) {
     return Padding(
       padding: const EdgeInsets.only(left: 12, bottom: 8),
@@ -308,11 +328,7 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  // Khung chứa các lựa chọn (Card trắng đổ bóng mờ)
-  Widget _buildSection({
-    required String title,
-    required List<Widget> children,
-  }) {
+  Widget _buildSection({required String title, required List<Widget> children}) {
     return Column(
       children: [
         _buildSectionTitle(title),
@@ -334,7 +350,6 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  // Từng lựa chọn (Tile)
   Widget _buildTile({
     required IconData icon,
     required Color iconColor,
@@ -364,28 +379,13 @@ class SettingsScreen extends ConsumerWidget {
         ),
       ),
       subtitle: subtitle != null
-          ? Text(
-              subtitle,
-              style: GoogleFonts.nunito(
-                fontSize: 13,
-                color: AppColors.textLight,
-              ),
-            )
+          ? Text(subtitle, style: GoogleFonts.nunito(fontSize: 13, color: AppColors.textLight))
           : null,
-      trailing:
-          trailing ??
-          (hideArrow
-              ? null
-              : const Icon(
-                  Icons.arrow_forward_ios_rounded,
-                  color: Colors.grey,
-                  size: 14,
-                )),
+      trailing: trailing ?? (hideArrow ? null : const Icon(Icons.arrow_forward_ios_rounded, color: Colors.grey, size: 14)),
       onTap: onTap ?? () {},
     );
   }
 
-  // Dòng gạch mờ phân cách
   Widget _buildDivider() {
     return Padding(
       padding: const EdgeInsets.only(left: 64, right: 20),
@@ -393,13 +393,12 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  // Nút Switch Bật/Tắt dễ thương
   Widget _buildSwitch(bool value) {
     return Switch(
       value: value,
       onChanged: (v) {},
       activeColor: Colors.white,
-      activeTrackColor: const Color(0xFFE8547A), // Màu hồng chủ đạo
+      activeTrackColor: const Color(0xFFE8547A),
       inactiveTrackColor: Colors.grey.shade200,
     );
   }
